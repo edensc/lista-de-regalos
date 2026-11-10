@@ -67,6 +67,9 @@ export default function Home() {
   const [leftCount, setLeftCount] = useState({})    // regalos sin reservar en listas ajenas
   const [profilesMap, setProfilesMap] = useState({})
   const [newListName, setNewListName] = useState('')
+  const [newListDesc, setNewListDesc] = useState('')
+  const [editingList, setEditingList] = useState(false)
+  const [listDraft, setListDraft] = useState({ name: '', description: '' })
   const [joinCode, setJoinCode] = useState('')
   const [currentListId, setCurrentListId] = useState(null)
 
@@ -219,11 +222,25 @@ export default function Home() {
     e.preventDefault()
     if (!newListName.trim()) return
     const { data, error } = await supabase
-      .from('lists').insert({ name: newListName.trim(), owner_id: user.id }).select('id').single()
+      .from('lists')
+      .insert({ name: newListName.trim(), description: newListDesc.trim() || null, owner_id: user.id })
+      .select('id').single()
     if (error) return flash(error.message)
     setNewListName('')
+    setNewListDesc('')
     await loadLists()
     setCurrentListId(data.id)
+  }
+
+  async function saveList(e) {
+    e.preventDefault()
+    if (!listDraft.name.trim()) return flash('La lista necesita un nombre')
+    const { error } = await supabase.from('lists')
+      .update({ name: listDraft.name.trim(), description: listDraft.description.trim() || null })
+      .eq('id', currentListId).eq('owner_id', user.id)
+    if (error) return flash(error.message)
+    setEditingList(false)
+    loadLists()
   }
 
   async function handleJoin(e) {
@@ -292,7 +309,7 @@ export default function Home() {
   }, [user])
 
   useEffect(() => {
-    setExpandedId(null); setEditingId(null); setForm(emptyForm); setAlsoIn([]); setExistingId('')
+    setExpandedId(null); setEditingId(null); setEditingList(false); setForm(emptyForm); setAlsoIn([]); setExistingId('')
     if (currentListId && user) {
       const l = lists.find((x) => x.id === currentListId)
       loadListGifts(currentListId, l ? l.owner_id === user.id : false)
@@ -460,9 +477,19 @@ export default function Home() {
             Mis listas{' '}
           </h1>
 
-          <form onSubmit={createList} style={{ ...S.row, flexWrap: 'nowrap', marginTop: 10 }}>
-            <input style={{ ...S.input, marginBottom: 0 }} placeholder="Nombre de una lista nueva (ej. Navidad)" value={newListName} onChange={(e) => setNewListName(e.target.value)} />
-            <button type="submit" style={S.btn}>Crear</button>
+          <form onSubmit={createList} style={{ marginTop: 10 }}>
+            <div style={{ ...S.row, flexWrap: 'nowrap' }}>
+              <input style={{ ...S.input, marginBottom: 0 }} placeholder="Nombre de una lista nueva (ej. Navidad)" value={newListName} onChange={(e) => setNewListName(e.target.value)} />
+              <button type="submit" style={S.btn}>Crear</button>
+            </div>
+            {newListName.trim() && (
+              <textarea
+                style={{ ...S.input, marginTop: 8, marginBottom: 0, minHeight: 64, resize: 'vertical' }}
+                placeholder="Descripción o leyenda (opcional). Ej: VJ = videojuego, H = herramienta"
+                value={newListDesc}
+                onChange={(e) => setNewListDesc(e.target.value)}
+              />
+            )}
           </form>
 
           <h3 style={S.h3}>Mis listas</h3>
@@ -526,8 +553,39 @@ export default function Home() {
         <div style={{ marginTop: 14 }}>
           <button style={S.linkBtn} onClick={() => { setCurrentListId(null); loadLists() }}>← Mis listas</button>
         </div>
-        <h1 style={S.h1}>{currentList.name}</h1>
-        {!isOwner && <p style={{ ...S.small, marginTop: 0 }}>Lista de {profilesMap[currentList.owner_id] || '…'}</p>}
+        {editingList ? (
+          <form onSubmit={saveList} style={{ marginTop: 16 }}>
+            <input style={S.input} placeholder="Nombre de la lista" value={listDraft.name} onChange={(e) => setListDraft({ ...listDraft, name: e.target.value })} />
+            <textarea
+              style={{ ...S.input, minHeight: 80, resize: 'vertical' }}
+              placeholder="Descripción o leyenda (opcional)"
+              value={listDraft.description}
+              onChange={(e) => setListDraft({ ...listDraft, description: e.target.value })}
+            />
+            <div style={S.row}>
+              <button type="submit" style={S.btn}>Guardar</button>
+              <button type="button" style={S.btnGhost} onClick={() => setEditingList(false)}>Cancelar</button>
+            </div>
+          </form>
+        ) : (
+          <>
+            <h1 style={S.h1}>{currentList.name}</h1>
+            {!isOwner && <p style={{ ...S.small, marginTop: 0 }}>Lista de {profilesMap[currentList.owner_id] || '…'}</p>}
+            {currentList.description && (
+              <p style={{ margin: '8px 0 0', fontSize: 14, color: C.muted, whiteSpace: 'pre-wrap', background: C.soft, padding: '8px 10px', borderRadius: 8 }}>
+                {currentList.description}
+              </p>
+            )}
+            {isOwner && (
+              <button
+                style={{ ...S.linkBtn, fontSize: 13, marginTop: 6 }}
+                onClick={() => { setListDraft({ name: currentList.name, description: currentList.description || '' }); setEditingList(true) }}
+              >
+                ✏️ Editar nombre y descripción
+              </button>
+            )}
+          </>
+        )}
 
         {isOwner && (
           <div style={{ ...S.row, margin: '8px 0 4px' }}>
