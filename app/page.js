@@ -3,31 +3,92 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 
-// ---------- Estilos (sencillos, al estilo Ta-da List) ----------
-const C = { link: '#1a4fd6', text: '#1d1d1f', muted: '#7b7b85', border: '#e3e3e8', bg: '#ffffff', soft: '#f6f6f9', danger: '#d23b3b', ok: '#2a8f5b', accent: '#1a4fd6' }
+// ---------- Paletas ----------
+const LIST_COLORS = {
+  violet: { main: '#7c5cff', soft: '#efeaff', dark: '#5b3fe0', name: 'Violeta' },
+  pink:   { main: '#ec4899', soft: '#fde7f3', dark: '#c42a7c', name: 'Rosa' },
+  orange: { main: '#f97316', soft: '#ffedd9', dark: '#d4570a', name: 'Naranja' },
+  amber:  { main: '#f2a900', soft: '#fff3d1', dark: '#b57d00', name: 'Ámbar' },
+  green:  { main: '#10b981', soft: '#d9f7ec', dark: '#0b8a60', name: 'Verde' },
+  teal:   { main: '#14b8c4', soft: '#d8f6f8', dark: '#0e8c96', name: 'Turquesa' },
+  blue:   { main: '#3b82f6', soft: '#e1ecff', dark: '#2160c9', name: 'Azul' },
+  red:    { main: '#ef4444', soft: '#fde4e4', dark: '#c42a2a', name: 'Rojo' },
+}
+const colorOf = (k) => LIST_COLORS[k] || LIST_COLORS.violet
+const LIST_EMOJIS = ['🎁', '🎄', '🎂', '🎮', '📚', '🎵', '🧸', '🛠️', '🏠', '🎬', '👕', '🍷', '🎲', '🎨', '🌟', '🐾']
+const AVATAR_EMOJIS = ['😀', '😎', '🥳', '🦊', '🐼', '🦁', '🐙', '🦄', '🐱', '🐶', '🌻', '🚀', '🎸', '🍕', '👾', '🦋']
+
+const T = { bg: 'linear-gradient(180deg,#f3efff 0%,#fdf2f8 100%)', text: '#231f3a', muted: '#7d7a92', border: '#e8e4f7', card: '#ffffff', danger: '#e04545', ok: '#10a36b', grad: 'linear-gradient(135deg,#7c5cff 0%,#ec4899 100%)' }
+
 const S = {
-  page: { minHeight: '100vh', background: C.bg, color: C.text, fontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, sans-serif', paddingBottom: 60 },
+  page: { minHeight: '100vh', background: T.bg, color: T.text, fontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, sans-serif', paddingBottom: 60 },
   container: { maxWidth: 560, margin: '0 auto', padding: '0 16px' },
-  top: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 0', borderBottom: `1px solid ${C.border}` },
-  h1: { fontSize: 26, margin: '18px 0 4px', fontWeight: 800 },
-  h3: { fontSize: 12, letterSpacing: 1, textTransform: 'uppercase', color: C.muted, margin: '26px 0 6px', borderBottom: `1px solid ${C.border}`, paddingBottom: 4 },
-  listLink: { display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', padding: '9px 0', cursor: 'pointer', fontSize: 19, fontWeight: 700, color: C.link, fontFamily: 'inherit' },
-  small: { fontSize: 13, fontWeight: 500, color: C.muted },
-  input: { width: '100%', boxSizing: 'border-box', padding: '11px 12px', fontSize: 16, border: `1px solid ${C.border}`, borderRadius: 8, marginBottom: 8, outline: 'none', background: '#fff', color: C.text, fontFamily: 'inherit' },
-  btn: { padding: '10px 16px', fontSize: 15, fontWeight: 600, border: 'none', borderRadius: 8, background: C.accent, color: '#fff', cursor: 'pointer', fontFamily: 'inherit' },
-  btnGhost: { padding: '8px 12px', fontSize: 14, fontWeight: 600, border: `1px solid ${C.border}`, borderRadius: 8, background: '#fff', color: C.text, cursor: 'pointer', fontFamily: 'inherit' },
-  btnDanger: { padding: '8px 12px', fontSize: 14, fontWeight: 600, border: `1px solid ${C.danger}`, borderRadius: 8, background: '#fff', color: C.danger, cursor: 'pointer', fontFamily: 'inherit' },
-  linkBtn: { background: 'none', border: 'none', color: C.link, cursor: 'pointer', fontSize: 15, padding: 0, fontFamily: 'inherit' },
+  header: { background: T.grad, color: '#fff', position: 'sticky', top: 0, zIndex: 10, boxShadow: '0 4px 14px rgba(124,92,255,0.25)' },
+  headerInner: { maxWidth: 560, margin: '0 auto', padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
+  h1: { fontSize: 26, margin: '20px 0 4px', fontWeight: 800 },
+  h3: { fontSize: 12, letterSpacing: 1.2, textTransform: 'uppercase', color: T.muted, margin: '26px 0 10px', fontWeight: 700 },
+  small: { fontSize: 13, color: T.muted },
+  card: { background: T.card, borderRadius: 16, padding: 16, boxShadow: '0 2px 12px rgba(80,60,160,0.08)' },
+  input: { width: '100%', boxSizing: 'border-box', padding: '12px 14px', fontSize: 16, border: `1.5px solid ${T.border}`, borderRadius: 12, marginBottom: 8, outline: 'none', background: '#fff', color: T.text, fontFamily: 'inherit' },
+  btn: (a = LIST_COLORS.violet) => ({ padding: '11px 18px', fontSize: 15, fontWeight: 700, border: 'none', borderRadius: 12, background: a.main, color: '#fff', cursor: 'pointer', fontFamily: 'inherit', boxShadow: `0 3px 10px ${a.main}44` }),
+  btnGhost: { padding: '9px 14px', fontSize: 14, fontWeight: 600, border: `1.5px solid ${T.border}`, borderRadius: 12, background: '#fff', color: T.text, cursor: 'pointer', fontFamily: 'inherit' },
+  btnDanger: { padding: '9px 14px', fontSize: 14, fontWeight: 600, border: `1.5px solid ${T.danger}`, borderRadius: 12, background: '#fff', color: T.danger, cursor: 'pointer', fontFamily: 'inherit' },
+  linkBtn: { background: 'none', border: 'none', color: LIST_COLORS.violet.dark, cursor: 'pointer', fontSize: 15, fontWeight: 600, padding: 0, fontFamily: 'inherit' },
   row: { display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' },
-  error: { background: '#fdecec', color: C.danger, padding: '10px 12px', borderRadius: 8, margin: '12px 0', fontSize: 14 },
-  info: { background: '#e9f8f1', color: C.ok, padding: '10px 12px', borderRadius: 8, margin: '12px 0', fontSize: 14 },
-  code: { fontFamily: 'ui-monospace, monospace', background: C.soft, padding: '4px 10px', borderRadius: 6, fontWeight: 700, letterSpacing: 1 },
-  gift: { borderBottom: `1px solid ${C.border}`, padding: '11px 0' },
-  tag: { display: 'inline-block', fontSize: 12, fontWeight: 600, padding: '2px 8px', borderRadius: 999, background: C.soft, color: C.muted, marginRight: 6, marginTop: 6 },
-  chip: (on) => ({ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 999, border: `1px solid ${on ? C.accent : C.border}`, background: on ? '#eaf0ff' : '#fff', color: on ? C.accent : C.text, fontSize: 14, fontWeight: 600, cursor: 'pointer' }),
+  error: { background: '#fdecec', color: T.danger, padding: '10px 14px', borderRadius: 12, margin: '12px 0', fontSize: 14 },
+  info: { background: '#e3f8ee', color: T.ok, padding: '10px 14px', borderRadius: 12, margin: '12px 0', fontSize: 14 },
+  code: { fontFamily: 'ui-monospace, monospace', background: '#fff', border: `1.5px dashed ${T.border}`, padding: '4px 10px', borderRadius: 8, fontWeight: 800, letterSpacing: 1.5 },
 }
 
 const fmtPrice = (p) => (p === null || p === undefined || p === '' ? null : `${Number(p).toFixed(2)} €`)
+
+// ---------- Componentes pequeños ----------
+function Avatar({ profile, size = 36, ring }) {
+  const c = colorOf(profile?.avatar_color)
+  const initial = (profile?.full_name || '?').trim().charAt(0).toUpperCase()
+  return (
+    <span style={{
+      width: size, height: size, borderRadius: '50%', background: c.main, color: '#fff',
+      display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+      fontSize: profile?.avatar_emoji ? size * 0.55 : size * 0.45, fontWeight: 800,
+      boxShadow: ring ? '0 0 0 2px #fff' : 'none',
+    }}>
+      {profile?.avatar_emoji || initial}
+    </span>
+  )
+}
+
+function EmojiPicker({ options, value, onChange, accent }) {
+  return (
+    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+      {options.map((e) => (
+        <button key={e} type="button" onClick={() => onChange(e)}
+          style={{
+            width: 40, height: 40, fontSize: 21, borderRadius: 12, cursor: 'pointer',
+            border: `2px solid ${value === e ? accent.main : T.border}`,
+            background: value === e ? accent.soft : '#fff',
+          }}>
+          {e}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function ColorPicker({ value, onChange }) {
+  return (
+    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+      {Object.entries(LIST_COLORS).map(([key, c]) => (
+        <button key={key} type="button" onClick={() => onChange(key)} title={c.name}
+          style={{
+            width: 32, height: 32, borderRadius: '50%', background: c.main, cursor: 'pointer',
+            border: value === key ? `3px solid ${T.text}` : '3px solid #fff',
+            boxShadow: '0 0 0 1px ' + T.border,
+          }} />
+      ))}
+    </div>
+  )
+}
 
 // Selector de listas donde aparece un regalo
 function ListPicker({ lists, selected, onChange, label }) {
@@ -35,16 +96,46 @@ function ListPicker({ lists, selected, onChange, label }) {
   if (lists.length === 0) return null
   return (
     <div style={{ marginBottom: 10 }}>
-      <div style={{ ...S.small, marginBottom: 6, fontWeight: 600 }}>{label}</div>
+      <div style={{ ...S.small, marginBottom: 6, fontWeight: 700 }}>{label}</div>
       <div style={S.row}>
-        {lists.map((l) => (
-          <label key={l.id} style={S.chip(selected.includes(l.id))}>
-            <input type="checkbox" checked={selected.includes(l.id)} onChange={() => toggle(l.id)} style={{ margin: 0 }} />
-            {l.name}
-          </label>
-        ))}
+        {lists.map((l) => {
+          const c = colorOf(l.color)
+          const on = selected.includes(l.id)
+          return (
+            <label key={l.id} style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 999, cursor: 'pointer',
+              border: `1.5px solid ${on ? c.main : T.border}`, background: on ? c.soft : '#fff', color: on ? c.dark : T.text, fontSize: 14, fontWeight: 600,
+            }}>
+              <input type="checkbox" checked={on} onChange={() => toggle(l.id)} style={{ margin: 0 }} />
+              {l.emoji || '🎁'} {l.name}
+            </label>
+          )
+        })}
       </div>
     </div>
+  )
+}
+
+function ListRow({ list, subtitle, onClick, ownerProfile }) {
+  const c = colorOf(list.color)
+  return (
+    <button onClick={onClick} style={{
+      display: 'flex', alignItems: 'center', gap: 14, width: '100%', textAlign: 'left', cursor: 'pointer',
+      background: '#fff', border: 'none', borderRadius: 16, padding: 12, marginBottom: 10, fontFamily: 'inherit',
+      boxShadow: '0 2px 12px rgba(80,60,160,0.08)', borderLeft: `6px solid ${c.main}`,
+    }}>
+      <span style={{ width: 48, height: 48, borderRadius: 14, background: c.soft, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 26, flexShrink: 0 }}>
+        {list.emoji || '🎁'}
+      </span>
+      <span style={{ flex: 1, minWidth: 0 }}>
+        <span style={{ display: 'block', fontSize: 17, fontWeight: 800, color: T.text }}>{list.name}</span>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: T.muted, marginTop: 2 }}>
+          {ownerProfile && <Avatar profile={ownerProfile} size={18} />}
+          {subtitle}
+        </span>
+      </span>
+      <span style={{ color: c.main, fontSize: 22, fontWeight: 800 }}>›</span>
+    </button>
   )
 }
 
@@ -58,29 +149,36 @@ export default function Home() {
   const [password, setPassword] = useState('')
   const [hasPending, setHasPending] = useState(false)
 
+  // Perfil
+  const [myProfile, setMyProfile] = useState(null)
+  const [showProfile, setShowProfile] = useState(false)
+  const [profileDraft, setProfileDraft] = useState({ full_name: '', avatar_emoji: '', avatar_color: 'violet' })
+
   // Mensajes
   const [error, setError] = useState('')
   const [info, setInfo] = useState('')
 
   // Listas
-  const [lists, setLists] = useState([])            // todas las visibles (mias y compartidas)
-  const [leftCount, setLeftCount] = useState({})    // regalos sin reservar en listas ajenas
-  const [profilesMap, setProfilesMap] = useState({})
+  const [lists, setLists] = useState([])
+  const [leftCount, setLeftCount] = useState({})
+  const [profilesMap, setProfilesMap] = useState({}) // id -> perfil completo
   const [newListName, setNewListName] = useState('')
   const [newListDesc, setNewListDesc] = useState('')
+  const [newListEmoji, setNewListEmoji] = useState('🎁')
+  const [newListColor, setNewListColor] = useState('violet')
   const [editingList, setEditingList] = useState(false)
-  const [listDraft, setListDraft] = useState({ name: '', description: '' })
+  const [listDraft, setListDraft] = useState({ name: '', description: '', emoji: '🎁', color: 'violet' })
   const [joinCode, setJoinCode] = useState('')
   const [currentListId, setCurrentListId] = useState(null)
 
   // Dentro de una lista
   const [gifts, setGifts] = useState([])
-  const [reservations, setReservations] = useState({}) // gift_id -> reserved_by
-  const [catalog, setCatalog] = useState([])           // todos mis regalos
+  const [reservations, setReservations] = useState({})
+  const [catalog, setCatalog] = useState([])
   const [loadingGifts, setLoadingGifts] = useState(false)
   const [expandedId, setExpandedId] = useState(null)
 
-  // Formulario
+  // Formulario de regalos
   const emptyForm = { title: '', description: '', price_estimated: '', url: '' }
   const [form, setForm] = useState(emptyForm)
   const [alsoIn, setAlsoIn] = useState([])
@@ -94,24 +192,40 @@ export default function Home() {
     setTimeout(() => { setError(''); setInfo('') }, 4500)
   }
 
+  const rememberProfiles = (profs) => {
+    setProfilesMap((prev) => {
+      const m = { ...prev }
+      ;(profs || []).forEach((p) => { m[p.id] = p })
+      return m
+    })
+  }
+  const nameOf = (id) => profilesMap[id]?.full_name
+
   const myLists = lists.filter((l) => l.owner_id === user?.id)
   const sharedLists = lists.filter((l) => l.owner_id !== user?.id)
   const currentList = lists.find((l) => l.id === currentListId) || null
   const isOwner = !!currentList && currentList.owner_id === user?.id
   const listName = (id) => lists.find((l) => l.id === id)?.name || 'Lista'
+  const accent = colorOf(currentList?.color)
 
-  // ---------- Sesión ----------
+  // ---------- Sesión y perfil ----------
   const ensureProfile = useCallback(async (u) => {
     if (!u) return
-    const { data } = await supabase.from('profiles').select('id').eq('id', u.id).maybeSingle()
-    if (!data) {
+    const { data } = await supabase.from('profiles')
+      .select('id, full_name, avatar_emoji, avatar_color').eq('id', u.id).maybeSingle()
+    if (data) {
+      setMyProfile(data)
+      setProfilesMap((prev) => ({ ...prev, [data.id]: data }))
+    } else {
       const name = u.user_metadata?.full_name || u.email?.split('@')[0] || 'Usuario'
       await supabase.from('profiles').upsert({ id: u.id, full_name: name })
+      const created = { id: u.id, full_name: name, avatar_emoji: null, avatar_color: null }
+      setMyProfile(created)
+      setProfilesMap((prev) => ({ ...prev, [u.id]: created }))
     }
   }, [])
 
   useEffect(() => {
-    // Enlace de invitación: ?join=CODIGO
     try {
       const code = new URLSearchParams(window.location.search).get('join')
       if (code) {
@@ -158,7 +272,33 @@ export default function Home() {
 
   async function handleLogout() {
     await supabase.auth.signOut()
-    setLists([]); setCurrentListId(null); setGifts([])
+    setLists([]); setCurrentListId(null); setGifts([]); setMyProfile(null); setShowProfile(false)
+  }
+
+  function openProfile() {
+    setProfileDraft({
+      full_name: myProfile?.full_name || '',
+      avatar_emoji: myProfile?.avatar_emoji || '',
+      avatar_color: myProfile?.avatar_color || 'violet',
+    })
+    setShowProfile(true)
+  }
+
+  async function saveProfile(e) {
+    e.preventDefault()
+    if (!profileDraft.full_name.trim()) return flash('Escribe tu nombre')
+    const payload = {
+      full_name: profileDraft.full_name.trim(),
+      avatar_emoji: profileDraft.avatar_emoji || null,
+      avatar_color: profileDraft.avatar_color || null,
+    }
+    const { error } = await supabase.from('profiles').update(payload).eq('id', user.id)
+    if (error) return flash(error.message)
+    const updated = { id: user.id, ...payload }
+    setMyProfile(updated)
+    rememberProfiles([updated])
+    setShowProfile(false)
+    flash('Perfil actualizado', 'info')
   }
 
   // ---------- Listas ----------
@@ -170,7 +310,6 @@ export default function Home() {
     const rows = data || []
     setLists(rows)
 
-    // Cuántos regalos quedan sin reservar en las listas ajenas
     const shared = rows.filter((l) => l.owner_id !== user.id)
     const giftIds = [...new Set(shared.flatMap((l) => (l.list_gifts || []).map((x) => x.gift_id)))]
     let reserved = new Set()
@@ -184,15 +323,11 @@ export default function Home() {
     })
     setLeftCount(counts)
 
-    // Nombres de los dueños de listas compartidas
     const ownerIds = [...new Set(shared.map((l) => l.owner_id))]
     if (ownerIds.length > 0) {
-      const { data: profs } = await supabase.from('profiles').select('id, full_name').in('id', ownerIds)
-      setProfilesMap((prev) => {
-        const m = { ...prev }
-        ;(profs || []).forEach((p) => { m[p.id] = p.full_name })
-        return m
-      })
+      const { data: profs } = await supabase.from('profiles')
+        .select('id, full_name, avatar_emoji, avatar_color').in('id', ownerIds)
+      rememberProfiles(profs)
     }
   }, [user])
 
@@ -223,11 +358,16 @@ export default function Home() {
     if (!newListName.trim()) return
     const { data, error } = await supabase
       .from('lists')
-      .insert({ name: newListName.trim(), description: newListDesc.trim() || null, owner_id: user.id })
+      .insert({
+        name: newListName.trim(),
+        description: newListDesc.trim() || null,
+        emoji: newListEmoji,
+        color: newListColor,
+        owner_id: user.id,
+      })
       .select('id').single()
     if (error) return flash(error.message)
-    setNewListName('')
-    setNewListDesc('')
+    setNewListName(''); setNewListDesc(''); setNewListEmoji('🎁'); setNewListColor('violet')
     await loadLists()
     setCurrentListId(data.id)
   }
@@ -236,7 +376,12 @@ export default function Home() {
     e.preventDefault()
     if (!listDraft.name.trim()) return flash('La lista necesita un nombre')
     const { error } = await supabase.from('lists')
-      .update({ name: listDraft.name.trim(), description: listDraft.description.trim() || null })
+      .update({
+        name: listDraft.name.trim(),
+        description: listDraft.description.trim() || null,
+        emoji: listDraft.emoji,
+        color: listDraft.color,
+      })
       .eq('id', currentListId).eq('owner_id', user.id)
     if (error) return flash(error.message)
     setEditingList(false)
@@ -282,21 +427,17 @@ export default function Home() {
       const { data: gs, error: e2 } = await supabase
         .from('gifts').select('*, list_gifts(list_id)').in('id', ids).order('created_at')
       if (e2) { setLoadingGifts(false); return flash(e2.message) }
-      // El dueño no recibe reservas: lo impide la base de datos
       const { data: rs } = await supabase.from('reservations').select('gift_id, reserved_by').in('gift_id', ids)
       const map = {}
       ;(rs || []).forEach((r) => { map[r.gift_id] = r.reserved_by })
       setGifts(gs || [])
       setReservations(map)
 
-      const missing = [...new Set(Object.values(map))]
-      if (missing.length > 0) {
-        const { data: profs } = await supabase.from('profiles').select('id, full_name').in('id', missing)
-        setProfilesMap((prev) => {
-          const m = { ...prev }
-          ;(profs || []).forEach((p) => { m[p.id] = p.full_name })
-          return m
-        })
+      const who = [...new Set(Object.values(map))]
+      if (who.length > 0) {
+        const { data: profs } = await supabase.from('profiles')
+          .select('id, full_name, avatar_emoji, avatar_color').in('id', who)
+        rememberProfiles(profs)
       }
     }
 
@@ -432,20 +573,20 @@ export default function Home() {
   if (!user) {
     return (
       <div style={S.page}>
-        <div style={{ ...S.container, paddingTop: 48, maxWidth: 420 }}>
-          <div style={{ textAlign: 'center', fontSize: 48 }}>🎁</div>
+        <div style={{ ...S.container, paddingTop: 56, maxWidth: 420 }}>
+          <div style={{ textAlign: 'center' }}>
+            <span style={{ width: 84, height: 84, borderRadius: 26, background: T.grad, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 44, boxShadow: '0 8px 24px rgba(124,92,255,0.35)' }}>🎁</span>
+          </div>
           <h1 style={{ ...S.h1, textAlign: 'center' }}>Gestor de Regalos</h1>
           <p style={{ ...S.small, textAlign: 'center', marginTop: 0 }}>Listas de deseos para compartir con tu gente</p>
-          {hasPending && (
-            <div style={S.info}>Te han invitado a una lista. Inicia sesión o crea una cuenta para abrirla.</div>
-          )}
-          <form onSubmit={handleAuth} style={{ marginTop: 20 }}>
+          {hasPending && <div style={S.info}>Te han invitado a una lista. Inicia sesión o crea una cuenta para abrirla.</div>}
+          <form onSubmit={handleAuth} style={{ ...S.card, marginTop: 22 }}>
             {authMode === 'signup' && (
               <input style={S.input} placeholder="Nombre completo" value={fullName} onChange={(e) => setFullName(e.target.value)} required />
             )}
             <input style={S.input} type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} required />
             <input style={S.input} type="password" placeholder="Contraseña" minLength={6} value={password} onChange={(e) => setPassword(e.target.value)} required />
-            <button type="submit" style={{ ...S.btn, width: '100%' }}>
+            <button type="submit" style={{ ...S.btn(), width: '100%' }}>
               {authMode === 'login' ? 'Entrar' : 'Registrarme'}
             </button>
             <button type="button" onClick={() => setAuthMode(authMode === 'login' ? 'signup' : 'login')}
@@ -460,35 +601,82 @@ export default function Home() {
   }
 
   const topBar = (
-    <div style={S.top}>
-      <strong style={{ fontSize: 17 }}>🎁 Gestor de Regalos</strong>
-      <button onClick={handleLogout} style={S.linkBtn}>Salir</button>
+    <div style={S.header}>
+      <div style={S.headerInner}>
+        <strong style={{ fontSize: 18 }}>🎁 Gestor de Regalos</strong>
+        <div style={S.row}>
+          <button onClick={openProfile} title="Mi perfil" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 8, color: '#fff', fontFamily: 'inherit', fontWeight: 700, fontSize: 14 }}>
+            <Avatar profile={myProfile} size={34} ring />
+          </button>
+          <button onClick={handleLogout} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', color: '#fff', borderRadius: 10, padding: '7px 12px', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>Salir</button>
+        </div>
+      </div>
     </div>
   )
 
-  // --- Pantalla principal: mis listas ---
-  if (!currentListId) {
+  // --- Perfil ---
+  if (showProfile) {
+    const pc = colorOf(profileDraft.avatar_color)
     return (
       <div style={S.page}>
+        {topBar}
         <div style={S.container}>
-          {topBar}
           <Messages />
-          <h1 style={S.h1}>
-            Mis listas{' '}
-          </h1>
+          <div style={{ marginTop: 14 }}>
+            <button style={S.linkBtn} onClick={() => setShowProfile(false)}>← Volver</button>
+          </div>
+          <h1 style={S.h1}>Mi perfil</h1>
+          <form onSubmit={saveProfile} style={{ ...S.card, marginTop: 12 }}>
+            <div style={{ textAlign: 'center', marginBottom: 14 }}>
+              <Avatar profile={profileDraft} size={84} />
+            </div>
+            <div style={{ ...S.small, fontWeight: 700, marginBottom: 6 }}>Nombre</div>
+            <input style={S.input} value={profileDraft.full_name} onChange={(e) => setProfileDraft({ ...profileDraft, full_name: e.target.value })} />
+            <div style={{ ...S.small, fontWeight: 700, margin: '8px 0 6px' }}>Avatar</div>
+            <EmojiPicker options={AVATAR_EMOJIS} value={profileDraft.avatar_emoji} accent={pc}
+              onChange={(e) => setProfileDraft({ ...profileDraft, avatar_emoji: e })} />
+            <div style={{ ...S.small, fontWeight: 700, margin: '14px 0 6px' }}>Color</div>
+            <ColorPicker value={profileDraft.avatar_color} onChange={(c) => setProfileDraft({ ...profileDraft, avatar_color: c })} />
+            <div style={{ ...S.row, marginTop: 18 }}>
+              <button type="submit" style={S.btn(pc)}>Guardar</button>
+              {profileDraft.avatar_emoji && (
+                <button type="button" style={S.btnGhost} onClick={() => setProfileDraft({ ...profileDraft, avatar_emoji: '' })}>Usar mi inicial</button>
+              )}
+            </div>
+          </form>
+        </div>
+      </div>
+    )
+  }
 
-          <form onSubmit={createList} style={{ marginTop: 10 }}>
+  // --- Pantalla principal ---
+  if (!currentListId) {
+    const nc = colorOf(newListColor)
+    return (
+      <div style={S.page}>
+        {topBar}
+        <div style={S.container}>
+          <Messages />
+          <h1 style={S.h1}>Hola, {(myProfile?.full_name || '').split(' ')[0] || 'bienvenido'} 👋</h1>
+          <p style={{ ...S.small, marginTop: 0 }}>Tus listas de deseos</p>
+
+          <form onSubmit={createList} style={{ ...S.card, marginTop: 14 }}>
             <div style={{ ...S.row, flexWrap: 'nowrap' }}>
-              <input style={{ ...S.input, marginBottom: 0 }} placeholder="Nombre de una lista nueva (ej. Navidad)" value={newListName} onChange={(e) => setNewListName(e.target.value)} />
-              <button type="submit" style={S.btn}>Crear</button>
+              <input style={{ ...S.input, marginBottom: 0 }} placeholder="✨ Nueva lista (ej. Navidad)" value={newListName} onChange={(e) => setNewListName(e.target.value)} />
+              <button type="submit" style={S.btn(nc)}>Crear</button>
             </div>
             {newListName.trim() && (
-              <textarea
-                style={{ ...S.input, marginTop: 8, marginBottom: 0, minHeight: 64, resize: 'vertical' }}
-                placeholder="Descripción o leyenda (opcional). Ej: VJ = videojuego, H = herramienta"
-                value={newListDesc}
-                onChange={(e) => setNewListDesc(e.target.value)}
-              />
+              <div style={{ marginTop: 10 }}>
+                <textarea
+                  style={{ ...S.input, minHeight: 64, resize: 'vertical' }}
+                  placeholder="Descripción o leyenda (opcional). Ej: VJ = videojuego, H = herramienta"
+                  value={newListDesc} onChange={(e) => setNewListDesc(e.target.value)}
+                />
+                <div style={{ ...S.small, fontWeight: 700, marginBottom: 6 }}>Icono</div>
+                <EmojiPicker options={LIST_EMOJIS} value={newListEmoji} onChange={setNewListEmoji} accent={nc} />
+                <div style={{ ...S.small, fontWeight: 700, margin: '12px 0 6px' }}>Color</div>
+                <ColorPicker value={newListColor} onChange={setNewListColor} />
+              </div>
             )}
           </form>
 
@@ -496,43 +684,41 @@ export default function Home() {
           {myLists.length === 0 ? (
             <p style={S.small}>Aún no tienes listas. Crea la primera arriba.</p>
           ) : (
-            myLists.map((l) => (
-              <button key={l.id} style={S.listLink} onClick={() => setCurrentListId(l.id)}>
-                {l.name}{' '}
-                <span style={S.small}>— {(l.list_gifts || []).length} {(l.list_gifts || []).length === 1 ? 'regalo' : 'regalos'}</span>
-              </button>
-            ))
+            myLists.map((l) => {
+              const n = (l.list_gifts || []).length
+              return <ListRow key={l.id} list={l} subtitle={`${n} ${n === 1 ? 'regalo' : 'regalos'}`} onClick={() => setCurrentListId(l.id)} />
+            })
           )}
 
-          <h3 style={S.h3}>Listas compartidas conmigo</h3>
+          <h3 style={S.h3}>Compartidas conmigo</h3>
           {sharedLists.length === 0 ? (
             <p style={S.small}>Cuando alguien te pase un código o enlace, su lista aparecerá aquí.</p>
           ) : (
             sharedLists.map((l) => (
-              <button key={l.id} style={S.listLink} onClick={() => setCurrentListId(l.id)}>
-                {l.name}{' '}
-                <span style={S.small}>
-                  — de {profilesMap[l.owner_id] || '…'} · {leftCount[l.id] ?? 0} sin reservar
-                </span>
-              </button>
+              <ListRow key={l.id} list={l} ownerProfile={profilesMap[l.owner_id]}
+                subtitle={`de ${nameOf(l.owner_id) || '…'} · ${leftCount[l.id] ?? 0} sin reservar`}
+                onClick={() => setCurrentListId(l.id)} />
             ))
           )}
 
-          <form onSubmit={handleJoin} style={{ ...S.row, flexWrap: 'nowrap', marginTop: 16 }}>
-            <input style={{ ...S.input, marginBottom: 0 }} placeholder="Código de una lista" value={joinCode} onChange={(e) => setJoinCode(e.target.value)} />
-            <button type="submit" style={S.btnGhost}>Unirme</button>
+          <form onSubmit={handleJoin} style={{ ...S.card, marginTop: 18 }}>
+            <div style={{ ...S.small, fontWeight: 700, marginBottom: 8 }}>¿Tienes un código?</div>
+            <div style={{ ...S.row, flexWrap: 'nowrap' }}>
+              <input style={{ ...S.input, marginBottom: 0 }} placeholder="Código de una lista" value={joinCode} onChange={(e) => setJoinCode(e.target.value)} />
+              <button type="submit" style={S.btnGhost}>Unirme</button>
+            </div>
           </form>
         </div>
       </div>
     )
   }
 
-  // --- Dentro de una lista ---
+  // --- Cargando lista ---
   if (!currentList) {
     return (
       <div style={S.page}>
+        {topBar}
         <div style={S.container}>
-          {topBar}
           <Messages />
           <p style={S.small}>Cargando lista…</p>
           <button style={S.linkBtn} onClick={() => setCurrentListId(null)}>← Mis listas</button>
@@ -541,64 +727,81 @@ export default function Home() {
     )
   }
 
+  // --- Dentro de una lista ---
   const inList = new Set(gifts.map((g) => g.id))
   const availableExisting = catalog.filter((c) => !inList.has(c.id))
   const otherOwnLists = myLists.filter((l) => l.id !== currentListId)
+  const draftAccent = colorOf(listDraft.color)
+  const ownerProfile = profilesMap[currentList.owner_id]
 
   return (
     <div style={S.page}>
+      {topBar}
       <div style={S.container}>
-        {topBar}
         <Messages />
         <div style={{ marginTop: 14 }}>
-          <button style={S.linkBtn} onClick={() => { setCurrentListId(null); loadLists() }}>← Mis listas</button>
+          <button style={{ ...S.linkBtn, color: accent.dark }} onClick={() => { setCurrentListId(null); loadLists() }}>← Mis listas</button>
         </div>
+
         {editingList ? (
-          <form onSubmit={saveList} style={{ marginTop: 16 }}>
+          <form onSubmit={saveList} style={{ ...S.card, marginTop: 14, borderTop: `6px solid ${draftAccent.main}` }}>
             <input style={S.input} placeholder="Nombre de la lista" value={listDraft.name} onChange={(e) => setListDraft({ ...listDraft, name: e.target.value })} />
-            <textarea
-              style={{ ...S.input, minHeight: 80, resize: 'vertical' }}
-              placeholder="Descripción o leyenda (opcional)"
-              value={listDraft.description}
-              onChange={(e) => setListDraft({ ...listDraft, description: e.target.value })}
-            />
-            <div style={S.row}>
-              <button type="submit" style={S.btn}>Guardar</button>
+            <textarea style={{ ...S.input, minHeight: 80, resize: 'vertical' }} placeholder="Descripción o leyenda (opcional)"
+              value={listDraft.description} onChange={(e) => setListDraft({ ...listDraft, description: e.target.value })} />
+            <div style={{ ...S.small, fontWeight: 700, marginBottom: 6 }}>Icono</div>
+            <EmojiPicker options={LIST_EMOJIS} value={listDraft.emoji} accent={draftAccent} onChange={(e) => setListDraft({ ...listDraft, emoji: e })} />
+            <div style={{ ...S.small, fontWeight: 700, margin: '12px 0 6px' }}>Color</div>
+            <ColorPicker value={listDraft.color} onChange={(c) => setListDraft({ ...listDraft, color: c })} />
+            <div style={{ ...S.row, marginTop: 16 }}>
+              <button type="submit" style={S.btn(draftAccent)}>Guardar</button>
               <button type="button" style={S.btnGhost} onClick={() => setEditingList(false)}>Cancelar</button>
             </div>
           </form>
         ) : (
-          <>
-            <h1 style={S.h1}>{currentList.name}</h1>
-            {!isOwner && <p style={{ ...S.small, marginTop: 0 }}>Lista de {profilesMap[currentList.owner_id] || '…'}</p>}
+          <div style={{ marginTop: 12, borderRadius: 20, padding: 18, background: `linear-gradient(135deg, ${accent.main} 0%, ${accent.dark} 100%)`, color: '#fff', boxShadow: `0 8px 22px ${accent.main}55` }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+              <span style={{ width: 58, height: 58, borderRadius: 18, background: 'rgba(255,255,255,0.22)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 32, flexShrink: 0 }}>
+                {currentList.emoji || '🎁'}
+              </span>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 24, fontWeight: 800, lineHeight: 1.15 }}>{currentList.name}</div>
+                {!isOwner && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, fontSize: 14, opacity: 0.95 }}>
+                    <Avatar profile={ownerProfile} size={20} ring /> Lista de {nameOf(currentList.owner_id) || '…'}
+                  </div>
+                )}
+              </div>
+            </div>
             {currentList.description && (
-              <p style={{ margin: '8px 0 0', fontSize: 14, color: C.muted, whiteSpace: 'pre-wrap', background: C.soft, padding: '8px 10px', borderRadius: 8 }}>
+              <p style={{ margin: '14px 0 0', fontSize: 14, whiteSpace: 'pre-wrap', background: 'rgba(255,255,255,0.18)', padding: '10px 12px', borderRadius: 12 }}>
                 {currentList.description}
               </p>
             )}
             {isOwner && (
               <button
-                style={{ ...S.linkBtn, fontSize: 13, marginTop: 6 }}
-                onClick={() => { setListDraft({ name: currentList.name, description: currentList.description || '' }); setEditingList(true) }}
+                style={{ marginTop: 12, background: 'rgba(255,255,255,0.22)', border: 'none', color: '#fff', borderRadius: 10, padding: '7px 12px', fontWeight: 700, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}
+                onClick={() => { setListDraft({ name: currentList.name, description: currentList.description || '', emoji: currentList.emoji || '🎁', color: currentList.color || 'violet' }); setEditingList(true) }}
               >
-                ✏️ Editar nombre y descripción
+                ✏️ Editar lista
               </button>
             )}
-          </>
-        )}
-
-        {isOwner && (
-          <div style={{ ...S.row, margin: '8px 0 4px' }}>
-            <span style={S.small}>Código para compartir:</span>
-            <span style={S.code}>{currentList.invite_code}</span>
-            <button style={S.btnGhost} onClick={() => { navigator.clipboard?.writeText(currentList.invite_code); flash('Código copiado', 'info') }}>Copiar código</button>
-            <button style={S.btnGhost} onClick={() => { navigator.clipboard?.writeText(`${window.location.origin}/?join=${currentList.invite_code}`); flash('Enlace copiado', 'info') }}>Copiar enlace</button>
           </div>
         )}
 
         {isOwner && (
-          <form onSubmit={addGift} style={{ marginTop: 18 }}>
-            <input style={S.input} placeholder="➕ Añadir regalo (título)" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
+          <div style={{ ...S.card, marginTop: 14, background: accent.soft, boxShadow: 'none' }}>
+            <div style={{ ...S.small, fontWeight: 700, color: accent.dark, marginBottom: 8 }}>Compartir esta lista</div>
+            <div style={S.row}>
+              <span style={S.code}>{currentList.invite_code}</span>
+              <button style={S.btnGhost} onClick={() => { navigator.clipboard?.writeText(currentList.invite_code); flash('Código copiado', 'info') }}>Copiar código</button>
+              <button style={S.btnGhost} onClick={() => { navigator.clipboard?.writeText(`${window.location.origin}/?join=${currentList.invite_code}`); flash('Enlace copiado', 'info') }}>Copiar enlace</button>
+            </div>
+          </div>
+        )}
+
+        {isOwner && (
+          <form onSubmit={addGift} style={{ ...S.card, marginTop: 14 }}>
+            <input style={{ ...S.input, marginBottom: form.title.trim() ? 8 : 0 }} placeholder="➕ Añadir regalo (título)" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
             {form.title.trim() && (
               <>
                 <input style={S.input} placeholder="Descripción (opcional)" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
@@ -607,7 +810,7 @@ export default function Home() {
                   <input style={S.input} type="url" placeholder="Enlace (URL)" value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} />
                 </div>
                 <ListPicker lists={otherOwnLists} selected={alsoIn} onChange={setAlsoIn} label="Añadir también a:" />
-                <button type="submit" style={S.btn}>Añadir a «{currentList.name}»</button>
+                <button type="submit" style={S.btn(accent)}>Añadir a «{currentList.name}»</button>
               </>
             )}
           </form>
@@ -623,20 +826,24 @@ export default function Home() {
           </form>
         )}
 
-        <h3 style={S.h3}>Regalos</h3>
+        <h3 style={{ ...S.h3, color: accent.dark }}>Regalos</h3>
         {loadingGifts ? (
           <p style={S.small}>Cargando…</p>
         ) : gifts.length === 0 ? (
-          <p style={S.small}>{isOwner ? 'Esta lista está vacía. Añade el primer regalo arriba.' : 'Esta lista aún no tiene regalos.'}</p>
+          <div style={{ ...S.card, textAlign: 'center', padding: 28 }}>
+            <div style={{ fontSize: 38 }}>{currentList.emoji || '🎁'}</div>
+            <p style={{ ...S.small, margin: '8px 0 0' }}>{isOwner ? 'Esta lista está vacía. Añade el primer regalo arriba.' : 'Esta lista aún no tiene regalos.'}</p>
+          </div>
         ) : (
           gifts.map((g) => {
             const reservedBy = reservations[g.id]
             const mine = reservedBy === user.id
+            const reservedByOther = !!reservedBy && !mine
             const expanded = expandedId === g.id
             const editing = editingId === g.id
-            const reservedByOther = !!reservedBy && !mine
+            const done = reservedByOther || mine
             return (
-              <div key={g.id} style={S.gift}>
+              <div key={g.id} style={{ ...S.card, padding: 14, marginBottom: 10, borderLeft: `6px solid ${done ? '#cfcbe0' : accent.main}`, opacity: done && !mine ? 0.8 : 1 }}>
                 {editing ? (
                   <>
                     <input style={S.input} placeholder="Título" value={editForm.title} onChange={(e) => setEditForm({ ...editForm, title: e.target.value })} />
@@ -647,7 +854,7 @@ export default function Home() {
                     </div>
                     <ListPicker lists={myLists} selected={editListIds} onChange={setEditListIds} label="Aparece en estas listas:" />
                     <div style={S.row}>
-                      <button style={S.btn} onClick={() => saveEdit(g)}>Guardar</button>
+                      <button style={S.btn(accent)} onClick={() => saveEdit(g)}>Guardar</button>
                       <button style={S.btnGhost} onClick={() => setEditingId(null)}>Cancelar</button>
                     </div>
                   </>
@@ -655,42 +862,56 @@ export default function Home() {
                   <>
                     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
                       <button
-                        style={{ ...S.linkBtn, color: C.text, fontSize: 17, fontWeight: 600, textAlign: 'left', textDecoration: reservedByOther || mine ? 'line-through' : 'none', opacity: reservedByOther || mine ? 0.55 : 1 }}
+                        style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'inherit', color: T.text, fontSize: 17, fontWeight: 700, textAlign: 'left', textDecoration: done ? 'line-through' : 'none' }}
                         onClick={() => setExpandedId(expanded ? null : g.id)}
                       >
                         {g.title}
                       </button>
-                      <span style={{ ...S.small, whiteSpace: 'nowrap' }}>{fmtPrice(g.price_estimated)}</span>
+                      {fmtPrice(g.price_estimated) && (
+                        <span style={{ background: accent.soft, color: accent.dark, fontWeight: 700, fontSize: 13, padding: '3px 10px', borderRadius: 999, whiteSpace: 'nowrap' }}>
+                          {fmtPrice(g.price_estimated)}
+                        </span>
+                      )}
                     </div>
 
                     {!isOwner && (
-                      <div style={{ ...S.row, marginTop: 6 }}>
+                      <div style={{ ...S.row, marginTop: 10 }}>
                         {mine ? (
                           <>
-                            <span style={{ color: C.ok, fontWeight: 600, fontSize: 14 }}>✅ Reservado por ti</span>
+                            <span style={{ color: T.ok, fontWeight: 700, fontSize: 14 }}>✅ Reservado por ti</span>
                             <button style={S.btnGhost} onClick={() => release(g)}>Liberar</button>
                           </>
                         ) : reservedByOther ? (
-                          <span style={{ ...S.small, fontWeight: 600 }}>🔒 Reservado por {profilesMap[reservedBy] || 'otra persona'}</span>
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: T.muted, fontWeight: 700, fontSize: 14 }}>
+                            <Avatar profile={profilesMap[reservedBy]} size={22} /> Reservado por {nameOf(reservedBy) || 'otra persona'}
+                          </span>
                         ) : (
-                          <button style={S.btn} onClick={() => reserve(g)}>Reservar</button>
+                          <button style={S.btn(accent)} onClick={() => reserve(g)}>🎀 Reservar</button>
                         )}
                       </div>
                     )}
 
                     {expanded && (
-                      <div style={{ marginTop: 8 }}>
+                      <div style={{ marginTop: 10 }}>
                         {g.description && <p style={{ margin: '0 0 6px', fontSize: 15 }}>{g.description}</p>}
                         {g.url && (
-                          <a href={g.url} target="_blank" rel="noopener noreferrer" style={{ color: C.link, fontSize: 14, wordBreak: 'break-all' }}>🔗 Ver enlace</a>
+                          <a href={g.url} target="_blank" rel="noopener noreferrer" style={{ color: accent.dark, fontWeight: 600, fontSize: 14, wordBreak: 'break-all' }}>🔗 Ver enlace</a>
                         )}
                         {!g.description && !g.url && <p style={S.small}>Sin más detalles.</p>}
                         {isOwner && (
                           <>
-                            <div>
-                              {(g.list_gifts || []).map((x) => <span key={x.list_id} style={S.tag}>{listName(x.list_id)}</span>)}
+                            <div style={{ marginTop: 8 }}>
+                              {(g.list_gifts || []).map((x) => {
+                                const l = lists.find((y) => y.id === x.list_id)
+                                const lc = colorOf(l?.color)
+                                return (
+                                  <span key={x.list_id} style={{ display: 'inline-block', fontSize: 12, fontWeight: 700, padding: '3px 10px', borderRadius: 999, background: lc.soft, color: lc.dark, marginRight: 6, marginTop: 4 }}>
+                                    {l?.emoji || '🎁'} {listName(x.list_id)}
+                                  </span>
+                                )
+                              })}
                             </div>
-                            <div style={{ ...S.row, marginTop: 10 }}>
+                            <div style={{ ...S.row, marginTop: 12 }}>
                               <button style={S.btnGhost} onClick={() => startEdit(g)}>✏️ Editar</button>
                               <button style={S.btnGhost} onClick={() => removeFromList(g)}>Quitar de esta lista</button>
                               <button style={S.btnDanger} onClick={() => deleteGift(g)}>🗑️ Eliminar</button>
@@ -707,7 +928,7 @@ export default function Home() {
         )}
 
         {isOwner && gifts.length > 0 && (
-          <p style={{ ...S.small, marginTop: 14 }}>Las reservas no se muestran al dueño de la lista: la sorpresa está a salvo 😉</p>
+          <p style={{ ...S.small, marginTop: 14, textAlign: 'center' }}>Las reservas no se muestran al dueño de la lista: la sorpresa está a salvo 😉</p>
         )}
 
         <div style={{ marginTop: 28 }}>
