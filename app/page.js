@@ -23,10 +23,34 @@ const S = {
   info: { background: '#e9f8f1', color: C.ok, padding: '10px 12px', borderRadius: 10, marginTop: 12, fontSize: 14 },
   code: { fontFamily: 'ui-monospace, monospace', background: '#efecff', color: C.primaryDark, padding: '4px 10px', borderRadius: 8, fontWeight: 700, letterSpacing: 1 },
   gift: { border: `1px solid ${C.border}`, borderRadius: 12, padding: 12, marginTop: 10, background: '#fff' },
+  tag: { display: 'inline-block', fontSize: 12, fontWeight: 600, padding: '3px 8px', borderRadius: 999, background: '#efecff', color: C.primaryDark, marginRight: 6, marginTop: 6 },
+  tagPrivate: { display: 'inline-block', fontSize: 12, fontWeight: 600, padding: '3px 8px', borderRadius: 999, background: '#f1f0f5', color: C.muted, marginRight: 6, marginTop: 6 },
 }
 
 const genCode = () => Math.random().toString(36).slice(2, 8).toUpperCase()
 const fmtPrice = (p) => (p === null || p === undefined || p === '' ? null : `${Number(p).toFixed(2)} €`)
+
+// Selector de grupos donde se comparte un regalo
+function GroupPicker({ groups, selected, onChange }) {
+  const toggle = (id) =>
+    onChange(selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id])
+  return (
+    <div style={{ marginBottom: 10 }}>
+      <div style={{ ...S.muted, marginBottom: 6, fontWeight: 600 }}>Compartir en:</div>
+      <div style={S.row}>
+        {groups.map((g) => (
+          <label key={g.id} style={{ ...S.chip(selected.includes(g.id)), display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <input type="checkbox" checked={selected.includes(g.id)} onChange={() => toggle(g.id)} style={{ margin: 0 }} />
+            {g.name}
+          </label>
+        ))}
+      </div>
+      {selected.length === 0 && (
+        <div style={{ ...S.muted, marginTop: 6, fontSize: 13 }}>🔒 Sin grupos: solo tú verás este regalo.</div>
+      )}
+    </div>
+  )
+}
 
 export default function Home() {
   // Auth
@@ -57,15 +81,19 @@ export default function Home() {
   // Formulario nuevo regalo
   const emptyForm = { title: '', description: '', price_estimated: '', url: '' }
   const [form, setForm] = useState(emptyForm)
+  const [shareIds, setShareIds] = useState([])
 
   // Edición
   const [editingId, setEditingId] = useState(null)
   const [editForm, setEditForm] = useState(emptyForm)
+  const [editShareIds, setEditShareIds] = useState([])
 
   const flash = (msg, type = 'error') => {
     if (type === 'error') { setError(msg); setInfo('') } else { setInfo(msg); setError('') }
     setTimeout(() => { setError(''); setInfo('') }, 4500)
   }
+
+  const groupNameById = (id) => groups.find((g) => g.id === id)?.name || 'Grupo'
 
   // ---------- Sesión ----------
   const ensureProfile = useCallback(async (u) => {
@@ -137,6 +165,11 @@ export default function Home() {
 
   useEffect(() => { if (user) loadGroups() }, [user, loadGroups])
 
+  // Al cambiar de grupo activo, el grupo abierto queda marcado por defecto al añadir un regalo
+  useEffect(() => {
+    setShareIds(activeGroup ? [activeGroup.id] : [])
+  }, [activeGroup?.id])
+
   async function createGroup(e) {
     e.preventDefault()
     if (!newGroupName.trim()) return
@@ -165,7 +198,7 @@ export default function Home() {
     const { error: e2 } = await supabase.from('group_members').insert({ group_id: g.id, user_id: user.id })
     if (e2) return flash(e2.message)
     setJoinCode('')
-    flash(`Te has unido a "${g.name}"`, 'info')
+    flash(`Te has unido a "${g.name}". Tus regalos no se comparten en él hasta que lo elijas.`, 'info')
     loadGroups(g.id)
   }
 
@@ -201,32 +234,50 @@ export default function Home() {
   }, [activeGroup, user])
 
   // ---------- Regalos ----------
-  const loadGifts = useCallback(async (targetUserId) => {
+  // Mi lista: todos mis regalos. Lista ajena: solo los compartidos en el grupo activo.
+  const loadGifts = useCallback(async (targetUserId, groupId) => {
     if (!targetUserId) { setGifts([]); return }
     setLoadingGifts(true)
     const { data, error } = await supabase
-      .from('gifts').select('*').eq('user_id', targetUserId).order('title')
+      .from('gifts')
+      .select('*, gift_groups(group_id)')
+      .eq('user_id', targetUserId)
+      .order('title')
     setLoadingGifts(false)
     if (error) return flash(error.message)
-    setGifts(data || [])
-  }, [])
+    let list = data || []
+    if (targetUserId !== user?.id) {
+      list = list.filter((g) => (g.gift_groups || []).some((x) => x.group_id === groupId))
+    }
+    setGifts(list)
+  }, [user])
 
-  useEffect(() => { loadGifts(selectedMember) }, [selectedMember, loadGifts])
+  useEffect(() => {
+    if (activeGroup) loadGifts(selectedMember, activeGroup.id)
+  }, [selectedMember, activeGroup, loadGifts])
 
   async function addGift(e) {
     e.preventDefault()
     if (!form.title.trim()) return flash('El título es obligatorio')
-    const { error } = await supabase.from('gifts').insert({
+    const { data: created, error } = await supabase.from('gifts').insert({
       user_id: user.id,
       title: form.title.trim(),
       description: form.description.trim() || null,
       url: form.url.trim() || null,
       price_estimated: form.price_estimated === '' ? null : Number(form.price_estimated),
-    })
+    }).select('id').single()
     if (error) return flash(error.message)
+
+    if (shareIds.length > 0) {
+      const { error: e2 } = await supabase.from('gift_groups')
+        .insert(shareIds.map((group_id) => ({ gift_id: created.id, group_id })))
+      if (e2) flash(`Regalo creado, pero no se pudo compartir: ${e2.message}`)
+    }
+
     setForm(emptyForm)
-    await loadGifts(selectedMember === user.id ? user.id : selectedMember)
-    if (selectedMember !== user.id) setSelectedMember(user.id)
+    setShareIds(activeGroup ? [activeGroup.id] : [])
+    setSelectedMember(user.id)
+    await loadGifts(user.id, activeGroup.id)
     flash('Regalo añadido', 'info')
   }
 
@@ -236,24 +287,40 @@ export default function Home() {
       title: g.title || '', description: g.description || '',
       price_estimated: g.price_estimated ?? '', url: g.url || '',
     })
+    setEditShareIds((g.gift_groups || []).map((x) => x.group_id))
   }
 
-  async function saveEdit(id) {
+  async function saveEdit(g) {
     if (!editForm.title.trim()) return flash('El título es obligatorio')
     const { error } = await supabase.from('gifts').update({
       title: editForm.title.trim(),
       description: editForm.description.trim() || null,
       url: editForm.url.trim() || null,
       price_estimated: editForm.price_estimated === '' ? null : Number(editForm.price_estimated),
-    }).eq('id', id).eq('user_id', user.id)
+    }).eq('id', g.id).eq('user_id', user.id)
     if (error) return flash(error.message)
+
+    // Sincronizar los grupos donde se comparte
+    const current = (g.gift_groups || []).map((x) => x.group_id)
+    const toAdd = editShareIds.filter((id) => !current.includes(id))
+    const toRemove = current.filter((id) => !editShareIds.includes(id))
+    if (toRemove.length > 0) {
+      const { error: e2 } = await supabase.from('gift_groups').delete().eq('gift_id', g.id).in('group_id', toRemove)
+      if (e2) return flash(e2.message)
+    }
+    if (toAdd.length > 0) {
+      const { error: e3 } = await supabase.from('gift_groups')
+        .insert(toAdd.map((group_id) => ({ gift_id: g.id, group_id })))
+      if (e3) return flash(e3.message)
+    }
+
     setEditingId(null)
-    loadGifts(selectedMember)
+    loadGifts(selectedMember, activeGroup.id)
   }
 
   async function deleteGift(g) {
     if (g.user_id !== user.id) return
-    if (!window.confirm(`¿Eliminar "${g.title}" de tu lista?`)) return
+    if (!window.confirm(`¿Eliminar "${g.title}" de tu lista? Desaparecerá de todos los grupos.`)) return
     const { error } = await supabase.from('gifts').delete().eq('id', g.id).eq('user_id', user.id)
     if (error) return flash(error.message)
     setGifts((prev) => prev.filter((x) => x.id !== g.id))
@@ -265,7 +332,7 @@ export default function Home() {
       .update({ is_reserved: reserving, reserved_by: reserving ? user.id : null })
       .eq('id', g.id)
     if (error) return flash(error.message)
-    loadGifts(selectedMember)
+    loadGifts(selectedMember, activeGroup.id)
   }
 
   // ---------- Render ----------
@@ -389,6 +456,7 @@ export default function Home() {
               <input style={S.input} type="number" step="0.01" min="0" inputMode="decimal" placeholder="Precio (€)" value={form.price_estimated} onChange={(e) => setForm({ ...form, price_estimated: e.target.value })} />
               <input style={S.input} type="url" placeholder="URL" value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} />
             </div>
+            <GroupPicker groups={groups} selected={shareIds} onChange={setShareIds} />
             <button type="submit" style={{ ...S.btn, width: '100%' }}>Añadir regalo</button>
           </form>
         )}
@@ -397,15 +465,17 @@ export default function Home() {
         {activeGroup && selectedMember && (
           <div style={S.card}>
             <h2 style={S.h2}>{isOwnList ? '🎁' : '👀'} {selectedName}</h2>
+            {!isOwnList && <p style={{ ...S.muted, marginTop: 0 }}>Solo ves lo que {profilesMap[selectedMember] || 'esta persona'} ha compartido en «{activeGroup.name}».</p>}
             {loadingGifts ? (
               <p style={S.muted}>Cargando…</p>
             ) : gifts.length === 0 ? (
-              <p style={S.muted}>{isOwnList ? 'Tu lista está vacía.' : 'Esta lista aún está vacía.'}</p>
+              <p style={S.muted}>{isOwnList ? 'Tu lista está vacía.' : 'No ha compartido nada en este grupo todavía.'}</p>
             ) : (
               gifts.map((g) => {
                 const own = g.user_id === user.id
                 const reservedByMe = g.is_reserved && g.reserved_by === user.id
                 const editing = editingId === g.id
+                const sharedIds = (g.gift_groups || []).map((x) => x.group_id)
                 return (
                   <div key={g.id} style={{ ...S.gift, opacity: g.is_reserved && !own ? 0.85 : 1 }}>
                     {editing ? (
@@ -416,8 +486,9 @@ export default function Home() {
                           <input style={S.input} type="number" step="0.01" min="0" placeholder="Precio" value={editForm.price_estimated} onChange={(e) => setEditForm({ ...editForm, price_estimated: e.target.value })} />
                           <input style={S.input} placeholder="URL" value={editForm.url} onChange={(e) => setEditForm({ ...editForm, url: e.target.value })} />
                         </div>
+                        <GroupPicker groups={groups} selected={editShareIds} onChange={setEditShareIds} />
                         <div style={S.row}>
-                          <button style={S.btn} onClick={() => saveEdit(g.id)}>Guardar</button>
+                          <button style={S.btn} onClick={() => saveEdit(g)}>Guardar</button>
                           <button style={S.btnGhost} onClick={() => setEditingId(null)}>Cancelar</button>
                         </div>
                       </>
@@ -432,6 +503,17 @@ export default function Home() {
                           <a href={g.url} target="_blank" rel="noopener noreferrer" style={{ color: C.primary, fontSize: 14, wordBreak: 'break-all', display: 'inline-block', marginTop: 6 }}>
                             🔗 Ver enlace
                           </a>
+                        )}
+                        {own && (
+                          <div>
+                            {sharedIds.length === 0 ? (
+                              <span style={S.tagPrivate}>🔒 Privado</span>
+                            ) : (
+                              sharedIds.map((gid) => (
+                                <span key={gid} style={S.tag}>👥 {groupNameById(gid)}</span>
+                              ))
+                            )}
+                          </div>
                         )}
                         <div style={{ ...S.row, marginTop: 10 }}>
                           {own ? (
