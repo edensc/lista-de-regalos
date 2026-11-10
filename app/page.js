@@ -21,7 +21,7 @@ const AVATAR_EMOJIS = ['😀', '😎', '🥳', '🦊', '🐼', '🦁', '🐙', '
 const T = { bg: 'linear-gradient(180deg,#f3efff 0%,#fdf2f8 100%)', text: '#231f3a', muted: '#7d7a92', border: '#e8e4f7', card: '#ffffff', danger: '#e04545', ok: '#10a36b', grad: 'linear-gradient(135deg,#7c5cff 0%,#ec4899 100%)' }
 
 const S = {
-  page: { minHeight: '100vh', background: T.bg, color: T.text, fontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, sans-serif', paddingBottom: 60 },
+  page: { minHeight: '100vh', background: T.bg, color: T.text, fontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, sans-serif', paddingBottom: 100 },
   container: { maxWidth: 560, margin: '0 auto', padding: '0 16px' },
   header: { background: T.grad, color: '#fff', position: 'sticky', top: 0, zIndex: 10, boxShadow: '0 4px 14px rgba(124,92,255,0.25)' },
   headerInner: { maxWidth: 560, margin: '0 auto', padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
@@ -41,6 +41,40 @@ const S = {
 }
 
 const fmtPrice = (p) => (p === null || p === undefined || p === '' ? null : `${Number(p).toFixed(2)} €`)
+
+function timeAgo(ts) {
+  const mins = Math.floor((Date.now() - new Date(ts).getTime()) / 60000)
+  if (mins < 1) return 'ahora'
+  if (mins < 60) return `hace ${mins} min`
+  const h = Math.floor(mins / 60)
+  if (h < 24) return `hace ${h} h`
+  const d = Math.floor(h / 24)
+  if (d === 1) return 'ayer'
+  return `hace ${d} días`
+}
+
+// Agrupa altas seguidas y quita duplicados de reservas (un evento por lista)
+function groupActivity(items) {
+  const out = []
+  for (const a of items) {
+    const last = out[out.length - 1]
+    if (
+      last && last.kind === a.kind && last.actor_id === a.actor_id &&
+      (a.kind === 'gift_reserved' || a.kind === 'gift_released') &&
+      last.gift_id === a.gift_id && last.created_at === a.created_at
+    ) continue
+    if (
+      a.kind === 'gift_added' && last && last.kind === 'gift_added' &&
+      last.actor_id === a.actor_id && last.list_id === a.list_id &&
+      Math.abs(new Date(last.created_at) - new Date(a.created_at)) < 6 * 3600 * 1000
+    ) {
+      last.count += 1
+      continue
+    }
+    out.push({ ...a, count: 1 })
+  }
+  return out
+}
 
 // ---------- Componentes pequeños ----------
 function Avatar({ profile, size = 36, ring }) {
@@ -90,7 +124,6 @@ function ColorPicker({ value, onChange }) {
   )
 }
 
-// Selector de listas donde aparece un regalo
 function ListPicker({ lists, selected, onChange, label }) {
   const toggle = (id) => onChange(selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id])
   if (lists.length === 0) return null
@@ -139,6 +172,23 @@ function ListRow({ list, subtitle, onClick, ownerProfile }) {
   )
 }
 
+function Tile({ gradient, icon, big, label, sub, onClick }) {
+  return (
+    <button onClick={onClick} style={{
+      background: gradient, color: '#fff', border: 'none', borderRadius: 20, padding: 16, textAlign: 'left',
+      cursor: 'pointer', minHeight: 124, display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
+      fontFamily: 'inherit', boxShadow: '0 6px 16px rgba(60,40,140,0.18)',
+    }}>
+      <span style={{ fontSize: 24 }}>{icon}</span>
+      <span>
+        <span style={{ display: 'block', fontSize: 30, fontWeight: 800, lineHeight: 1 }}>{big}</span>
+        <span style={{ display: 'block', fontSize: 14, fontWeight: 700, marginTop: 4 }}>{label}</span>
+        <span style={{ display: 'block', fontSize: 12, opacity: 0.9, marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sub}</span>
+      </span>
+    </button>
+  )
+}
+
 export default function Home() {
   // Auth
   const [user, setUser] = useState(null)
@@ -158,10 +208,18 @@ export default function Home() {
   const [error, setError] = useState('')
   const [info, setInfo] = useState('')
 
-  // Listas
+  // Navegación
+  const [tab, setTab] = useState('home') // home | mine | shared | gifts
+  const [currentListId, setCurrentListId] = useState(null)
+
+  // Datos
   const [lists, setLists] = useState([])
   const [leftCount, setLeftCount] = useState({})
-  const [profilesMap, setProfilesMap] = useState({}) // id -> perfil completo
+  const [profilesMap, setProfilesMap] = useState({})
+  const [catalog, setCatalog] = useState([]) // todos mis regalos
+  const [activity, setActivity] = useState([])
+
+  // Crear lista
   const [newListName, setNewListName] = useState('')
   const [newListDesc, setNewListDesc] = useState('')
   const [newListEmoji, setNewListEmoji] = useState('🎁')
@@ -169,16 +227,19 @@ export default function Home() {
   const [editingList, setEditingList] = useState(false)
   const [listDraft, setListDraft] = useState({ name: '', description: '', emoji: '🎁', color: 'violet' })
   const [joinCode, setJoinCode] = useState('')
-  const [currentListId, setCurrentListId] = useState(null)
+
+  // Inicio: añadir regalo / lista
+  const [quickMode, setQuickMode] = useState('gift')
+  const [homeListIds, setHomeListIds] = useState([])
+  const [homeInit, setHomeInit] = useState(false)
 
   // Dentro de una lista
   const [gifts, setGifts] = useState([])
   const [reservations, setReservations] = useState({})
-  const [catalog, setCatalog] = useState([])
   const [loadingGifts, setLoadingGifts] = useState(false)
   const [expandedId, setExpandedId] = useState(null)
 
-  // Formulario de regalos
+  // Formularios de regalo
   const emptyForm = { title: '', description: '', price_estimated: '', url: '' }
   const [form, setForm] = useState(emptyForm)
   const [alsoIn, setAlsoIn] = useState([])
@@ -273,6 +334,7 @@ export default function Home() {
   async function handleLogout() {
     await supabase.auth.signOut()
     setLists([]); setCurrentListId(null); setGifts([]); setMyProfile(null); setShowProfile(false)
+    setCatalog([]); setActivity([]); setTab('home'); setHomeInit(false)
   }
 
   function openProfile() {
@@ -301,7 +363,7 @@ export default function Home() {
     flash('Perfil actualizado', 'info')
   }
 
-  // ---------- Listas ----------
+  // ---------- Carga de datos ----------
   const loadLists = useCallback(async () => {
     if (!user) return
     const { data, error } = await supabase
@@ -331,17 +393,78 @@ export default function Home() {
     }
   }, [user])
 
+  const loadCatalog = useCallback(async () => {
+    if (!user) return
+    const { data, error } = await supabase
+      .from('gifts').select('*, list_gifts(list_id)').eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+    if (error) return flash(error.message)
+    setCatalog(data || [])
+  }, [user])
+
+  const loadActivity = useCallback(async () => {
+    if (!user) return
+    const since = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString()
+    const { data, error } = await supabase
+      .from('activity').select('*').gte('created_at', since)
+      .order('created_at', { ascending: false }).limit(80)
+    if (error) return // la actividad es secundaria: no molestamos con errores
+    const rows = data || []
+    setActivity(rows)
+    const actors = [...new Set(rows.map((r) => r.actor_id).filter(Boolean))]
+    if (actors.length > 0) {
+      const { data: profs } = await supabase.from('profiles')
+        .select('id, full_name, avatar_emoji, avatar_color').in('id', actors)
+      rememberProfiles(profs)
+    }
+  }, [user])
+
+  const loadListGifts = useCallback(async (listId) => {
+    if (!listId) return
+    setLoadingGifts(true)
+    const { data: lg, error } = await supabase.from('list_gifts').select('gift_id').eq('list_id', listId)
+    if (error) { setLoadingGifts(false); return flash(error.message) }
+    const ids = (lg || []).map((x) => x.gift_id)
+
+    if (ids.length === 0) {
+      setGifts([]); setReservations({})
+    } else {
+      const { data: gs, error: e2 } = await supabase
+        .from('gifts').select('*, list_gifts(list_id)').in('id', ids).order('created_at')
+      if (e2) { setLoadingGifts(false); return flash(e2.message) }
+      const { data: rs } = await supabase.from('reservations').select('gift_id, reserved_by').in('gift_id', ids)
+      const map = {}
+      ;(rs || []).forEach((r) => { map[r.gift_id] = r.reserved_by })
+      setGifts(gs || [])
+      setReservations(map)
+
+      const who = [...new Set(Object.values(map))]
+      if (who.length > 0) {
+        const { data: profs } = await supabase.from('profiles')
+          .select('id, full_name, avatar_emoji, avatar_color').in('id', who)
+        rememberProfiles(profs)
+      }
+    }
+    setLoadingGifts(false)
+  }, [])
+
+  // Recarga todo tras un cambio
+  async function afterChange() {
+    await Promise.all([loadLists(), loadCatalog(), loadActivity()])
+    if (currentListId) await loadListGifts(currentListId)
+  }
+
   async function joinByCode(code) {
     const { data, error } = await supabase.rpc('join_list', { p_code: code })
     if (error) return flash(error.message.includes('Código') ? 'Código de invitación no válido' : error.message)
-    await loadLists()
+    await Promise.all([loadLists(), loadActivity()])
     setCurrentListId(data)
     flash('Te has unido a la lista', 'info')
   }
 
   useEffect(() => {
     if (!user) return
-    loadLists().then(() => {
+    Promise.all([loadLists(), loadCatalog(), loadActivity()]).then(() => {
       try {
         const pending = localStorage.getItem('pendingJoin')
         if (pending) {
@@ -351,8 +474,31 @@ export default function Home() {
         }
       } catch (e) {}
     })
-  }, [user, loadLists])
+  }, [user, loadLists, loadCatalog, loadActivity])
 
+  // Lista marcada por defecto al añadir un regalo desde el inicio
+  useEffect(() => {
+    if (homeInit || myLists.length === 0) return
+    let last = null
+    try { last = localStorage.getItem('lastListId') } catch (e) {}
+    const pick = myLists.find((l) => l.id === last) || myLists[0]
+    setHomeListIds([pick.id])
+    setHomeInit(true)
+  }, [myLists, homeInit])
+
+  useEffect(() => {
+    setExpandedId(null); setEditingId(null); setEditingList(false); setForm(emptyForm); setAlsoIn([]); setExistingId('')
+    if (currentListId && user) {
+      loadListGifts(currentListId)
+      try { localStorage.setItem('lastListId', currentListId) } catch (e) {}
+    } else {
+      setGifts([])
+    }
+  }, [currentListId, user, loadListGifts])
+
+  useEffect(() => { setEditingId(null) }, [tab])
+
+  // ---------- Listas ----------
   async function createList(e) {
     e.preventDefault()
     if (!newListName.trim()) return
@@ -401,7 +547,7 @@ export default function Home() {
     const { error } = await supabase.from('lists').delete().eq('id', currentList.id)
     if (error) return flash(error.message)
     setCurrentListId(null)
-    loadLists()
+    afterChangeNoList()
   }
 
   async function leaveList() {
@@ -410,73 +556,51 @@ export default function Home() {
     const { error } = await supabase.from('list_members').delete().eq('list_id', currentList.id).eq('user_id', user.id)
     if (error) return flash(error.message)
     setCurrentListId(null)
-    loadLists()
+    afterChangeNoList()
   }
 
-  // ---------- Regalos de una lista ----------
-  const loadListGifts = useCallback(async (listId, owner) => {
-    if (!listId) return
-    setLoadingGifts(true)
-    const { data: lg, error } = await supabase.from('list_gifts').select('gift_id').eq('list_id', listId)
-    if (error) { setLoadingGifts(false); return flash(error.message) }
-    const ids = (lg || []).map((x) => x.gift_id)
+  async function afterChangeNoList() {
+    await Promise.all([loadLists(), loadCatalog(), loadActivity()])
+  }
 
-    if (ids.length === 0) {
-      setGifts([]); setReservations({})
-    } else {
-      const { data: gs, error: e2 } = await supabase
-        .from('gifts').select('*, list_gifts(list_id)').in('id', ids).order('created_at')
-      if (e2) { setLoadingGifts(false); return flash(e2.message) }
-      const { data: rs } = await supabase.from('reservations').select('gift_id, reserved_by').in('gift_id', ids)
-      const map = {}
-      ;(rs || []).forEach((r) => { map[r.gift_id] = r.reserved_by })
-      setGifts(gs || [])
-      setReservations(map)
-
-      const who = [...new Set(Object.values(map))]
-      if (who.length > 0) {
-        const { data: profs } = await supabase.from('profiles')
-          .select('id, full_name, avatar_emoji, avatar_color').in('id', who)
-        rememberProfiles(profs)
-      }
+  // ---------- Regalos ----------
+  async function createGift(f, targets) {
+    const { data: created, error } = await supabase.from('gifts').insert({
+      user_id: user.id,
+      title: f.title.trim(),
+      description: f.description.trim() || null,
+      url: f.url.trim() || null,
+      price_estimated: f.price_estimated === '' ? null : Number(f.price_estimated),
+    }).select('id').single()
+    if (error) { flash(error.message); return false }
+    if (targets.length > 0) {
+      const { error: e2 } = await supabase.from('list_gifts')
+        .insert(targets.map((list_id) => ({ list_id, gift_id: created.id })))
+      if (e2) flash(`Regalo creado, pero no se pudo añadir a la lista: ${e2.message}`)
     }
+    return true
+  }
 
-    if (owner) {
-      const { data: cat } = await supabase
-        .from('gifts').select('id, title, list_gifts(list_id)').eq('user_id', user.id).order('title')
-      setCatalog(cat || [])
-    }
-    setLoadingGifts(false)
-  }, [user])
-
-  useEffect(() => {
-    setExpandedId(null); setEditingId(null); setEditingList(false); setForm(emptyForm); setAlsoIn([]); setExistingId('')
-    if (currentListId && user) {
-      const l = lists.find((x) => x.id === currentListId)
-      loadListGifts(currentListId, l ? l.owner_id === user.id : false)
-    } else {
-      setGifts([])
-    }
-  }, [currentListId, user])
-
+  // Desde dentro de una lista
   async function addGift(e) {
     e.preventDefault()
     if (!form.title.trim()) return flash('El título es obligatorio')
-    const { data: created, error } = await supabase.from('gifts').insert({
-      user_id: user.id,
-      title: form.title.trim(),
-      description: form.description.trim() || null,
-      url: form.url.trim() || null,
-      price_estimated: form.price_estimated === '' ? null : Number(form.price_estimated),
-    }).select('id').single()
-    if (error) return flash(error.message)
-    const targets = [currentListId, ...alsoIn]
-    const { error: e2 } = await supabase.from('list_gifts')
-      .insert(targets.map((list_id) => ({ list_id, gift_id: created.id })))
-    if (e2) flash(`Regalo creado, pero no se pudo añadir a la lista: ${e2.message}`)
+    const ok = await createGift(form, [currentListId, ...alsoIn])
+    if (!ok) return
     setForm(emptyForm); setAlsoIn([])
-    await loadListGifts(currentListId, true)
-    loadLists()
+    afterChange()
+  }
+
+  // Desde el inicio
+  async function addGiftHome(e) {
+    e.preventDefault()
+    if (!form.title.trim()) return flash('El título es obligatorio')
+    const ok = await createGift(form, homeListIds)
+    if (!ok) return
+    try { if (homeListIds[0]) localStorage.setItem('lastListId', homeListIds[0]) } catch (er) {}
+    setForm(emptyForm)
+    flash(homeListIds.length > 0 ? 'Regalo añadido' : 'Regalo guardado sin lista (puedes asignarlo después)', 'info')
+    afterChange()
   }
 
   async function addExisting(e) {
@@ -485,8 +609,7 @@ export default function Home() {
     const { error } = await supabase.from('list_gifts').insert({ list_id: currentListId, gift_id: existingId })
     if (error) return flash(error.message)
     setExistingId('')
-    await loadListGifts(currentListId, true)
-    loadLists()
+    afterChange()
   }
 
   function startEdit(g) {
@@ -520,24 +643,21 @@ export default function Home() {
       if (e3) return flash(e3.message)
     }
     setEditingId(null)
-    await loadListGifts(currentListId, true)
-    loadLists()
+    afterChange()
   }
 
   async function removeFromList(g) {
     if (!window.confirm(`¿Quitar "${g.title}" de esta lista? Seguirá en tus otras listas.`)) return
     const { error } = await supabase.from('list_gifts').delete().eq('list_id', currentListId).eq('gift_id', g.id)
     if (error) return flash(error.message)
-    await loadListGifts(currentListId, true)
-    loadLists()
+    afterChange()
   }
 
   async function deleteGift(g) {
     if (!window.confirm(`¿Eliminar "${g.title}" definitivamente? Desaparecerá de todas tus listas.`)) return
     const { error } = await supabase.from('gifts').delete().eq('id', g.id).eq('user_id', user.id)
     if (error) return flash(error.message)
-    await loadListGifts(currentListId, true)
-    loadLists()
+    afterChange()
   }
 
   async function reserve(g) {
@@ -546,15 +666,13 @@ export default function Home() {
       if (error.code === '23505') flash('Otra persona acaba de reservar este regalo')
       else flash(error.message)
     }
-    loadListGifts(currentListId, false)
-    loadLists()
+    afterChange()
   }
 
   async function release(g) {
     const { error } = await supabase.from('reservations').delete().eq('gift_id', g.id).eq('reserved_by', user.id)
     if (error) return flash(error.message)
-    loadListGifts(currentListId, false)
-    loadLists()
+    afterChange()
   }
 
   // ---------- Render ----------
@@ -605,7 +723,7 @@ export default function Home() {
       <div style={S.headerInner}>
         <strong style={{ fontSize: 18 }}>🎁 Gestor de Regalos</strong>
         <div style={S.row}>
-          <button onClick={openProfile} title="Mi perfil" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 8, color: '#fff', fontFamily: 'inherit', fontWeight: 700, fontSize: 14 }}>
+          <button onClick={openProfile} title="Mi perfil" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center' }}>
             <Avatar profile={myProfile} size={34} ring />
           </button>
           <button onClick={handleLogout} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', color: '#fff', borderRadius: 10, padding: '7px 12px', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>Salir</button>
@@ -614,133 +732,114 @@ export default function Home() {
     </div>
   )
 
+  const goTab = (t) => { setShowProfile(false); setCurrentListId(null); setTab(t) }
+  const tabBar = (
+    <div style={{
+      position: 'fixed', left: 0, right: 0, bottom: 0, background: '#fff', borderTop: `1px solid ${T.border}`,
+      display: 'flex', justifyContent: 'space-around', padding: '8px 0 calc(8px + env(safe-area-inset-bottom))', zIndex: 20,
+    }}>
+      {[['home', '🏠', 'Inicio'], ['mine', '📋', 'Mis listas'], ['shared', '👥', 'Compartidas']].map(([key, icon, label]) => {
+        const on = tab === key && !showProfile
+        return (
+          <button key={key} onClick={() => goTab(key)} style={{
+            background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', flexDirection: 'column',
+            alignItems: 'center', gap: 2, color: on ? LIST_COLORS.violet.dark : T.muted, fontWeight: on ? 800 : 600, fontSize: 12, minWidth: 80,
+          }}>
+            <span style={{ fontSize: 22, filter: on ? 'none' : 'grayscale(0.7)' }}>{icon}</span>
+            {label}
+          </button>
+        )
+      })}
+    </div>
+  )
+
+  const shell = (content) => (
+    <div style={S.page}>
+      {topBar}
+      <div style={S.container}>{content}</div>
+      {tabBar}
+    </div>
+  )
+
   // --- Perfil ---
   if (showProfile) {
     const pc = colorOf(profileDraft.avatar_color)
-    return (
-      <div style={S.page}>
-        {topBar}
-        <div style={S.container}>
-          <Messages />
-          <div style={{ marginTop: 14 }}>
-            <button style={S.linkBtn} onClick={() => setShowProfile(false)}>← Volver</button>
-          </div>
-          <h1 style={S.h1}>Mi perfil</h1>
-          <form onSubmit={saveProfile} style={{ ...S.card, marginTop: 12 }}>
-            <div style={{ textAlign: 'center', marginBottom: 14 }}>
-              <Avatar profile={profileDraft} size={84} />
-            </div>
-            <div style={{ ...S.small, fontWeight: 700, marginBottom: 6 }}>Nombre</div>
-            <input style={S.input} value={profileDraft.full_name} onChange={(e) => setProfileDraft({ ...profileDraft, full_name: e.target.value })} />
-            <div style={{ ...S.small, fontWeight: 700, margin: '8px 0 6px' }}>Avatar</div>
-            <EmojiPicker options={AVATAR_EMOJIS} value={profileDraft.avatar_emoji} accent={pc}
-              onChange={(e) => setProfileDraft({ ...profileDraft, avatar_emoji: e })} />
-            <div style={{ ...S.small, fontWeight: 700, margin: '14px 0 6px' }}>Color</div>
-            <ColorPicker value={profileDraft.avatar_color} onChange={(c) => setProfileDraft({ ...profileDraft, avatar_color: c })} />
-            <div style={{ ...S.row, marginTop: 18 }}>
-              <button type="submit" style={S.btn(pc)}>Guardar</button>
-              {profileDraft.avatar_emoji && (
-                <button type="button" style={S.btnGhost} onClick={() => setProfileDraft({ ...profileDraft, avatar_emoji: '' })}>Usar mi inicial</button>
-              )}
-            </div>
-          </form>
-        </div>
-      </div>
-    )
-  }
-
-  // --- Pantalla principal ---
-  if (!currentListId) {
-    const nc = colorOf(newListColor)
-    return (
-      <div style={S.page}>
-        {topBar}
-        <div style={S.container}>
-          <Messages />
-          <h1 style={S.h1}>Hola, {(myProfile?.full_name || '').split(' ')[0] || 'bienvenido'} 👋</h1>
-          <p style={{ ...S.small, marginTop: 0 }}>Tus listas de deseos</p>
-
-          <form onSubmit={createList} style={{ ...S.card, marginTop: 14 }}>
-            <div style={{ ...S.row, flexWrap: 'nowrap' }}>
-              <input style={{ ...S.input, marginBottom: 0 }} placeholder="✨ Nueva lista (ej. Navidad)" value={newListName} onChange={(e) => setNewListName(e.target.value)} />
-              <button type="submit" style={S.btn(nc)}>Crear</button>
-            </div>
-            {newListName.trim() && (
-              <div style={{ marginTop: 10 }}>
-                <textarea
-                  style={{ ...S.input, minHeight: 64, resize: 'vertical' }}
-                  placeholder="Descripción o leyenda (opcional). Ej: VJ = videojuego, H = herramienta"
-                  value={newListDesc} onChange={(e) => setNewListDesc(e.target.value)}
-                />
-                <div style={{ ...S.small, fontWeight: 700, marginBottom: 6 }}>Icono</div>
-                <EmojiPicker options={LIST_EMOJIS} value={newListEmoji} onChange={setNewListEmoji} accent={nc} />
-                <div style={{ ...S.small, fontWeight: 700, margin: '12px 0 6px' }}>Color</div>
-                <ColorPicker value={newListColor} onChange={setNewListColor} />
-              </div>
-            )}
-          </form>
-
-          <h3 style={S.h3}>Mis listas</h3>
-          {myLists.length === 0 ? (
-            <p style={S.small}>Aún no tienes listas. Crea la primera arriba.</p>
-          ) : (
-            myLists.map((l) => {
-              const n = (l.list_gifts || []).length
-              return <ListRow key={l.id} list={l} subtitle={`${n} ${n === 1 ? 'regalo' : 'regalos'}`} onClick={() => setCurrentListId(l.id)} />
-            })
-          )}
-
-          <h3 style={S.h3}>Compartidas conmigo</h3>
-          {sharedLists.length === 0 ? (
-            <p style={S.small}>Cuando alguien te pase un código o enlace, su lista aparecerá aquí.</p>
-          ) : (
-            sharedLists.map((l) => (
-              <ListRow key={l.id} list={l} ownerProfile={profilesMap[l.owner_id]}
-                subtitle={`de ${nameOf(l.owner_id) || '…'} · ${leftCount[l.id] ?? 0} sin reservar`}
-                onClick={() => setCurrentListId(l.id)} />
-            ))
-          )}
-
-          <form onSubmit={handleJoin} style={{ ...S.card, marginTop: 18 }}>
-            <div style={{ ...S.small, fontWeight: 700, marginBottom: 8 }}>¿Tienes un código?</div>
-            <div style={{ ...S.row, flexWrap: 'nowrap' }}>
-              <input style={{ ...S.input, marginBottom: 0 }} placeholder="Código de una lista" value={joinCode} onChange={(e) => setJoinCode(e.target.value)} />
-              <button type="submit" style={S.btnGhost}>Unirme</button>
-            </div>
-          </form>
-        </div>
-      </div>
-    )
-  }
-
-  // --- Cargando lista ---
-  if (!currentList) {
-    return (
-      <div style={S.page}>
-        {topBar}
-        <div style={S.container}>
-          <Messages />
-          <p style={S.small}>Cargando lista…</p>
-          <button style={S.linkBtn} onClick={() => setCurrentListId(null)}>← Mis listas</button>
-        </div>
-      </div>
-    )
-  }
-
-  // --- Dentro de una lista ---
-  const inList = new Set(gifts.map((g) => g.id))
-  const availableExisting = catalog.filter((c) => !inList.has(c.id))
-  const otherOwnLists = myLists.filter((l) => l.id !== currentListId)
-  const draftAccent = colorOf(listDraft.color)
-  const ownerProfile = profilesMap[currentList.owner_id]
-
-  return (
-    <div style={S.page}>
-      {topBar}
-      <div style={S.container}>
+    return shell(
+      <>
         <Messages />
         <div style={{ marginTop: 14 }}>
-          <button style={{ ...S.linkBtn, color: accent.dark }} onClick={() => { setCurrentListId(null); loadLists() }}>← Mis listas</button>
+          <button style={S.linkBtn} onClick={() => setShowProfile(false)}>← Volver</button>
+        </div>
+        <h1 style={S.h1}>Mi perfil</h1>
+        <form onSubmit={saveProfile} style={{ ...S.card, marginTop: 12 }}>
+          <div style={{ textAlign: 'center', marginBottom: 14 }}>
+            <Avatar profile={profileDraft} size={84} />
+          </div>
+          <div style={{ ...S.small, fontWeight: 700, marginBottom: 6 }}>Nombre</div>
+          <input style={S.input} value={profileDraft.full_name} onChange={(e) => setProfileDraft({ ...profileDraft, full_name: e.target.value })} />
+          <div style={{ ...S.small, fontWeight: 700, margin: '8px 0 6px' }}>Avatar</div>
+          <EmojiPicker options={AVATAR_EMOJIS} value={profileDraft.avatar_emoji} accent={pc}
+            onChange={(e) => setProfileDraft({ ...profileDraft, avatar_emoji: e })} />
+          <div style={{ ...S.small, fontWeight: 700, margin: '14px 0 6px' }}>Color</div>
+          <ColorPicker value={profileDraft.avatar_color} onChange={(c) => setProfileDraft({ ...profileDraft, avatar_color: c })} />
+          <div style={{ ...S.row, marginTop: 18 }}>
+            <button type="submit" style={S.btn(pc)}>Guardar</button>
+            {profileDraft.avatar_emoji && (
+              <button type="button" style={S.btnGhost} onClick={() => setProfileDraft({ ...profileDraft, avatar_emoji: '' })}>Usar mi inicial</button>
+            )}
+          </div>
+        </form>
+      </>
+    )
+  }
+
+  // Formulario de lista nueva (inicio y "Mis listas")
+  const nc = colorOf(newListColor)
+  const createListForm = (
+    <form onSubmit={createList}>
+      <div style={{ ...S.row, flexWrap: 'nowrap' }}>
+        <input style={{ ...S.input, marginBottom: 0 }} placeholder="✨ Nombre de la lista (ej. Navidad)" value={newListName} onChange={(e) => setNewListName(e.target.value)} />
+        <button type="submit" style={S.btn(nc)}>Crear</button>
+      </div>
+      {newListName.trim() && (
+        <div style={{ marginTop: 10 }}>
+          <textarea
+            style={{ ...S.input, minHeight: 64, resize: 'vertical' }}
+            placeholder="Descripción o leyenda (opcional). Ej: VJ = videojuego, H = herramienta"
+            value={newListDesc} onChange={(e) => setNewListDesc(e.target.value)}
+          />
+          <div style={{ ...S.small, fontWeight: 700, marginBottom: 6 }}>Icono</div>
+          <EmojiPicker options={LIST_EMOJIS} value={newListEmoji} onChange={setNewListEmoji} accent={nc} />
+          <div style={{ ...S.small, fontWeight: 700, margin: '12px 0 6px' }}>Color</div>
+          <ColorPicker value={newListColor} onChange={setNewListColor} />
+        </div>
+      )}
+    </form>
+  )
+
+  // =========== DENTRO DE UNA LISTA ===========
+  if (currentListId) {
+    if (!currentList) {
+      return shell(
+        <>
+          <Messages />
+          <p style={S.small}>Cargando lista…</p>
+          <button style={S.linkBtn} onClick={() => setCurrentListId(null)}>← Atrás</button>
+        </>
+      )
+    }
+
+    const inList = new Set(gifts.map((g) => g.id))
+    const availableExisting = catalog.filter((c) => !inList.has(c.id))
+    const otherOwnLists = myLists.filter((l) => l.id !== currentListId)
+    const draftAccent = colorOf(listDraft.color)
+    const ownerProfile = profilesMap[currentList.owner_id]
+
+    return shell(
+      <>
+        <Messages />
+        <div style={{ marginTop: 14 }}>
+          <button style={{ ...S.linkBtn, color: accent.dark }} onClick={() => setCurrentListId(null)}>← Atrás</button>
         </div>
 
         {editingList ? (
@@ -819,7 +918,7 @@ export default function Home() {
         {isOwner && availableExisting.length > 0 && (
           <form onSubmit={addExisting} style={{ ...S.row, flexWrap: 'nowrap', marginTop: 12 }}>
             <select style={{ ...S.input, marginBottom: 0 }} value={existingId} onChange={(e) => setExistingId(e.target.value)}>
-              <option value="">Añadir un regalo que ya tengo en otra lista…</option>
+              <option value="">Añadir un regalo que ya tengo…</option>
               {availableExisting.map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}
             </select>
             <button type="submit" style={S.btnGhost} disabled={!existingId}>Añadir</button>
@@ -938,7 +1037,232 @@ export default function Home() {
             <button style={S.btnGhost} onClick={leaveList}>Salir de esta lista</button>
           )}
         </div>
+      </>
+    )
+  }
+
+  // =========== MIS LISTAS ===========
+  if (tab === 'mine') {
+    return shell(
+      <>
+        <Messages />
+        <h1 style={S.h1}>📋 Mis listas</h1>
+        <div style={{ ...S.card, marginTop: 12 }}>{createListForm}</div>
+        <h3 style={S.h3}>Tus listas</h3>
+        {myLists.length === 0 ? (
+          <p style={S.small}>Aún no tienes listas. Crea la primera arriba.</p>
+        ) : (
+          myLists.map((l) => {
+            const n = (l.list_gifts || []).length
+            return <ListRow key={l.id} list={l} subtitle={`${n} ${n === 1 ? 'regalo' : 'regalos'}`} onClick={() => setCurrentListId(l.id)} />
+          })
+        )}
+      </>
+    )
+  }
+
+  // =========== COMPARTIDAS ===========
+  if (tab === 'shared') {
+    return shell(
+      <>
+        <Messages />
+        <h1 style={S.h1}>👥 Compartidas conmigo</h1>
+        <form onSubmit={handleJoin} style={{ ...S.card, marginTop: 12 }}>
+          <div style={{ ...S.small, fontWeight: 700, marginBottom: 8 }}>¿Tienes un código?</div>
+          <div style={{ ...S.row, flexWrap: 'nowrap' }}>
+            <input style={{ ...S.input, marginBottom: 0 }} placeholder="Código de una lista" value={joinCode} onChange={(e) => setJoinCode(e.target.value)} />
+            <button type="submit" style={S.btn(LIST_COLORS.blue)}>Unirme</button>
+          </div>
+        </form>
+        <h3 style={S.h3}>Listas de otras personas</h3>
+        {sharedLists.length === 0 ? (
+          <p style={S.small}>Cuando alguien te pase un código o enlace, su lista aparecerá aquí.</p>
+        ) : (
+          sharedLists.map((l) => (
+            <ListRow key={l.id} list={l} ownerProfile={profilesMap[l.owner_id]}
+              subtitle={`de ${nameOf(l.owner_id) || '…'} · ${leftCount[l.id] ?? 0} sin reservar`}
+              onClick={() => setCurrentListId(l.id)} />
+          ))
+        )}
+      </>
+    )
+  }
+
+  // =========== MIS REGALOS ===========
+  if (tab === 'gifts') {
+    return shell(
+      <>
+        <Messages />
+        <div style={{ marginTop: 14 }}>
+          <button style={S.linkBtn} onClick={() => setTab('home')}>← Inicio</button>
+        </div>
+        <h1 style={S.h1}>🎁 Mis regalos</h1>
+        <p style={{ ...S.small, marginTop: 0 }}>Todos tus regalos, estén o no en una lista.</p>
+        {catalog.length === 0 ? (
+          <div style={{ ...S.card, textAlign: 'center', padding: 28 }}>
+            <div style={{ fontSize: 38 }}>🎁</div>
+            <p style={{ ...S.small, margin: '8px 0 0' }}>Aún no tienes regalos. Añade el primero desde el inicio.</p>
+          </div>
+        ) : (
+          catalog.map((g) => {
+            const editing = editingId === g.id
+            const ids = (g.list_gifts || []).map((x) => x.list_id)
+            return (
+              <div key={g.id} style={{ ...S.card, padding: 14, marginBottom: 10, borderLeft: `6px solid ${ids.length ? colorOf(lists.find((l) => l.id === ids[0])?.color).main : '#cfcbe0'}` }}>
+                {editing ? (
+                  <>
+                    <input style={S.input} placeholder="Título" value={editForm.title} onChange={(e) => setEditForm({ ...editForm, title: e.target.value })} />
+                    <input style={S.input} placeholder="Descripción" value={editForm.description} onChange={(e) => setEditForm({ ...editForm, description: e.target.value })} />
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <input style={S.input} type="number" step="0.01" min="0" placeholder="Precio" value={editForm.price_estimated} onChange={(e) => setEditForm({ ...editForm, price_estimated: e.target.value })} />
+                      <input style={S.input} placeholder="URL" value={editForm.url} onChange={(e) => setEditForm({ ...editForm, url: e.target.value })} />
+                    </div>
+                    <ListPicker lists={myLists} selected={editListIds} onChange={setEditListIds} label="Aparece en estas listas:" />
+                    <div style={S.row}>
+                      <button style={S.btn()} onClick={() => saveEdit(g)}>Guardar</button>
+                      <button style={S.btnGhost} onClick={() => setEditingId(null)}>Cancelar</button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
+                      <strong style={{ fontSize: 17 }}>{g.title}</strong>
+                      {fmtPrice(g.price_estimated) && <span style={{ ...S.small, fontWeight: 700, whiteSpace: 'nowrap' }}>{fmtPrice(g.price_estimated)}</span>}
+                    </div>
+                    {g.description && <p style={{ margin: '6px 0 0', fontSize: 14 }}>{g.description}</p>}
+                    {g.url && <a href={g.url} target="_blank" rel="noopener noreferrer" style={{ color: LIST_COLORS.violet.dark, fontSize: 14, fontWeight: 600 }}>🔗 Ver enlace</a>}
+                    <div style={{ marginTop: 8 }}>
+                      {ids.length === 0 ? (
+                        <span style={{ display: 'inline-block', fontSize: 12, fontWeight: 700, padding: '3px 10px', borderRadius: 999, background: '#f1f0f5', color: T.muted }}>Sin lista</span>
+                      ) : (
+                        ids.map((id) => {
+                          const l = lists.find((y) => y.id === id)
+                          const lc = colorOf(l?.color)
+                          return (
+                            <span key={id} style={{ display: 'inline-block', fontSize: 12, fontWeight: 700, padding: '3px 10px', borderRadius: 999, background: lc.soft, color: lc.dark, marginRight: 6, marginTop: 4 }}>
+                              {l?.emoji || '🎁'} {listName(id)}
+                            </span>
+                          )
+                        })
+                      )}
+                    </div>
+                    <div style={{ ...S.row, marginTop: 12 }}>
+                      <button style={S.btnGhost} onClick={() => startEdit(g)}>✏️ Editar / asignar a listas</button>
+                      <button style={S.btnDanger} onClick={() => deleteGift(g)}>🗑️ Eliminar</button>
+                    </div>
+                  </>
+                )}
+              </div>
+            )
+          })
+        )}
+      </>
+    )
+  }
+
+  // =========== INICIO ===========
+  const myGiftCount = catalog.length
+  const noListCount = catalog.filter((g) => (g.list_gifts || []).length === 0).length
+  const totalLeft = sharedLists.reduce((s, l) => s + (leftCount[l.id] || 0), 0)
+  const grouped = groupActivity(activity)
+  const actorName = (id) => (id === user.id ? null : nameOf(id) || 'Alguien')
+
+  const describe = (a) => {
+    const me = a.actor_id === user.id
+    const who = me ? 'Tú' : actorName(a.actor_id)
+    const lname = listName(a.list_id)
+    const t = a.gift_title ? `«${a.gift_title}»` : 'un regalo'
+    if (a.kind === 'gift_added') {
+      if (a.count > 1) return `${who} ${me ? 'añadiste' : 'añadió'} ${a.count} regalos a ${lname}`
+      return `${who} ${me ? 'añadiste' : 'añadió'} ${t} a ${lname}`
+    }
+    if (a.kind === 'gift_reserved') return `${who} ${me ? 'reservaste' : 'reservó'} ${t} · ${lname}`
+    if (a.kind === 'gift_released') return `${who} ${me ? 'liberaste' : 'liberó'} ${t} · ${lname}`
+    return `${who} ${me ? 'te uniste' : 'se unió'} a ${lname}`
+  }
+  const icon = { gift_added: '🎁', gift_reserved: '🎀', gift_released: '↩️', member_joined: '👋' }
+
+  return shell(
+    <>
+      <Messages />
+      <h1 style={S.h1}>Hola, {(myProfile?.full_name || '').split(' ')[0] || 'bienvenido'} 👋</h1>
+      <p style={{ ...S.small, marginTop: 0 }}>¿Qué quieres hacer hoy?</p>
+
+      {/* Añadir regalo o lista */}
+      <div style={{ ...S.card, marginTop: 14 }}>
+        <div style={{ display: 'flex', background: '#f3f0ff', borderRadius: 12, padding: 4, marginBottom: 12 }}>
+          {[['gift', '🎁 Nuevo regalo'], ['list', '📋 Nueva lista']].map(([k, label]) => (
+            <button key={k} onClick={() => setQuickMode(k)} style={{
+              flex: 1, border: 'none', borderRadius: 9, padding: '9px 0', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700, fontSize: 14,
+              background: quickMode === k ? '#fff' : 'transparent', color: quickMode === k ? LIST_COLORS.violet.dark : T.muted,
+              boxShadow: quickMode === k ? '0 1px 6px rgba(80,60,160,0.15)' : 'none',
+            }}>{label}</button>
+          ))}
+        </div>
+
+        {quickMode === 'gift' ? (
+          <form onSubmit={addGiftHome}>
+            <input style={{ ...S.input, marginBottom: form.title.trim() ? 8 : 0 }} placeholder="¿Qué te haría ilusión?" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
+            {form.title.trim() && (
+              <>
+                <input style={S.input} placeholder="Descripción (opcional)" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <input style={S.input} type="number" step="0.01" min="0" inputMode="decimal" placeholder="Precio (€)" value={form.price_estimated} onChange={(e) => setForm({ ...form, price_estimated: e.target.value })} />
+                  <input style={S.input} type="url" placeholder="Enlace (URL)" value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} />
+                </div>
+                {myLists.length > 0 ? (
+                  <>
+                    <ListPicker lists={myLists} selected={homeListIds} onChange={setHomeListIds} label="Añadir a:" />
+                    {homeListIds.length === 0 && <p style={{ ...S.small, margin: '0 0 10px' }}>Sin listas marcadas: se guardará como borrador y podrás asignarlo después.</p>}
+                  </>
+                ) : (
+                  <p style={{ ...S.small, margin: '0 0 10px' }}>Aún no tienes listas: el regalo se guardará sin lista. Puedes crear una en la pestaña «Nueva lista».</p>
+                )}
+                <button type="submit" style={{ ...S.btn(), width: '100%' }}>Añadir regalo</button>
+              </>
+            )}
+          </form>
+        ) : (
+          createListForm
+        )}
       </div>
-    </div>
+
+      {/* Cuadros */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 16 }}>
+        <Tile gradient="linear-gradient(135deg,#7c5cff,#a855f7)" icon="📋" big={myLists.length} label="Mis listas"
+          sub={myLists.length ? myLists.slice(-2).map((l) => l.name).join(' · ') : 'Crea la primera'} onClick={() => goTab('mine')} />
+        <Tile gradient="linear-gradient(135deg,#10b981,#14b8c4)" icon="👥" big={sharedLists.length} label="Compartidas"
+          sub={sharedLists.length ? `${totalLeft} regalos sin reservar` : 'Aún ninguna'} onClick={() => goTab('shared')} />
+        <Tile gradient="linear-gradient(135deg,#f97316,#f2a900)" icon="🎁" big={myGiftCount} label="Mis regalos"
+          sub={noListCount > 0 ? `${noListCount} sin lista` : 'Todos en alguna lista'} onClick={() => setTab('gifts')} />
+        <Tile gradient="linear-gradient(135deg,#3b82f6,#6366f1)" icon="🔗" big="+" label="Unirme"
+          sub="Con un código o enlace" onClick={() => goTab('shared')} />
+      </div>
+
+      {/* Actividad */}
+      <h3 style={S.h3}>Actividad · últimos 30 días</h3>
+      <div style={{ ...S.card, padding: 6 }}>
+        {grouped.length === 0 ? (
+          <p style={{ ...S.small, margin: 12 }}>Aquí verás lo que ocurre en las listas que compartes con otras personas.</p>
+        ) : (
+          grouped.slice(0, 20).map((a) => {
+            const l = lists.find((x) => x.id === a.list_id)
+            const lc = colorOf(l?.color)
+            return (
+              <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 10px', borderBottom: `1px solid ${T.border}` }}>
+                <span style={{ width: 34, height: 34, borderRadius: 12, background: lc.soft, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 17, flexShrink: 0 }}>
+                  {icon[a.kind]}
+                </span>
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <span style={{ display: 'block', fontSize: 14, fontWeight: 600 }}>{describe(a)}</span>
+                  <span style={{ display: 'block', fontSize: 12, color: T.muted }}>{timeAgo(a.created_at)}</span>
+                </span>
+              </div>
+            )
+          })
+        )}
+      </div>
+      <p style={{ ...S.small, textAlign: 'center', marginTop: 12 }}>No ves quién reserva tus regalos: la sorpresa está a salvo 😉</p>
+    </>
   )
 }
