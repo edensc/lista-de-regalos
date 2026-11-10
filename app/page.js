@@ -187,9 +187,10 @@ export default function Home() {
 
   async function joinGroup(e) {
     e.preventDefault()
-    const code = joinCode.trim().toUpperCase()
+    const code = joinCode.trim().replace(/[%_]/g, '')
     if (!code) return
-    const { data: g, error } = await supabase.from('groups').select('*').eq('invite_code', code).maybeSingle()
+    // ilike: ignora mayúsculas/minúsculas (los grupos antiguos pueden tener el código en minúsculas)
+    const { data: g, error } = await supabase.from('groups').select('*').ilike('invite_code', code).maybeSingle()
     if (error) return flash(error.message)
     if (!g) return flash('Código de invitación no válido')
     const { data: already } = await supabase
