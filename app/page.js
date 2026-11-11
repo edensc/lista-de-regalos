@@ -41,7 +41,7 @@ const S = {
 }
 
 const EMPTY_GIFT = { title: '', description: '', price_estimated: '', url: '' }
-const EMPTY_LIST = { name: '', description: '', icon: 'gift', color: 'violet' }
+const EMPTY_LIST = { name: '', description: '', icon: 'fluent:Wrapped gift', color: 'violet' }
 
 const fmtPrice = (p) => (p === null || p === undefined || p === '' ? null : `${Number(p).toFixed(2)} €`)
 const normUrl = (u) => (/^https?:\/\//i.test(u) ? u : `https://${u}`)
@@ -122,28 +122,50 @@ const ICONS = {
 }
 const LIST_ICON_KEYS = ['gift', 'cake', 'tree', 'gamepad', 'book', 'music', 'wrench', 'home', 'film', 'shirt', 'wine', 'dice', 'star', 'heart', 'camera', 'smile']
 
-// Avatares: DiceBear (API gratuita para uso no comercial). Se guarda "estilo:semilla".
-// Solo estilos con licencia CC0 o de uso libre; la lista blanca evita cargar URLs arbitrarias.
+// Imágenes 3D de Fluent Emoji (Microsoft, licencia MIT) servidas desde jsDelivr.
+// Se guardan como "fluent:Nombre". La lista blanca evita cargar URLs arbitrarias.
+// Si una imagen no carga, se oculta en los selectores y se sustituye por un icono donde ya se usaba.
+const FLUENT_BASE = 'https://cdn.jsdelivr.net/gh/microsoft/fluentui-emoji@main/assets'
+const fluentUrl = (name) => `${FLUENT_BASE}/${encodeURIComponent(name)}/3D/${name.toLowerCase().replace(/ /g, '_')}_3d.png`
+
+const FLUENT_ANIMALS = ['Fox', 'Panda', 'Lion', 'Tiger face', 'Cat face', 'Dog face', 'Frog', 'Octopus', 'Unicorn', 'Penguin', 'Koala', 'Owl', 'Rabbit face', 'Bear', 'Monkey face', 'Hamster', 'Pig face', 'Whale', 'Dolphin', 'Butterfly', 'Turtle', 'Elephant', 'Giraffe', 'Hedgehog', 'Sloth', 'Otter', 'Llama', 'Flamingo', 'Dragon face']
+
+const LIST_THEMES = [
+  { label: 'Regalos y fiestas', items: ['Wrapped gift', 'Birthday cake', 'Balloon', 'Party popper', 'Confetti ball', 'Ribbon'] },
+  { label: 'Navidad', items: ['Christmas tree', 'Snowman', 'Snowflake', 'Glowing star', 'Bell', 'Candy'] },
+  { label: 'Juegos', items: ['Video game', 'Joystick', 'Game die', 'Puzzle piece', 'Teddy bear', 'Chess pawn'] },
+  { label: 'Libros y música', items: ['Books', 'Open book', 'Notebook', 'Musical note', 'Guitar', 'Headphone', 'Microphone'] },
+  { label: 'Hogar y herramientas', items: ['House', 'Couch and lamp', 'Potted plant', 'Wrench', 'Hammer', 'Toolbox', 'Gear'] },
+  { label: 'Cine y tecnología', items: ['Clapper board', 'Movie camera', 'Popcorn', 'Camera', 'Laptop', 'Mobile phone'] },
+  { label: 'Ropa y accesorios', items: ['T-shirt', 'Jeans', 'Running shoe', 'Backpack', 'Eyeglasses', 'Gem stone'] },
+  { label: 'Comida y bebida', items: ['Wine glass', 'Hot beverage', 'Pizza', 'Cookie', 'Doughnut', 'Beer mug'] },
+  { label: 'Viajes y deporte', items: ['Airplane', 'Luggage', 'Camping', 'Beach with umbrella', 'Soccer ball', 'Bicycle'] },
+]
+const FLUENT_ALL = [...FLUENT_ANIMALS, ...LIST_THEMES.flatMap((t) => t.items)]
+const isArt = (n) => typeof n === 'string' && n.startsWith('fluent:') && FLUENT_ALL.includes(n.slice(7))
+
+// Avatares: animales (Fluent) o DiceBear (API gratuita para uso no comercial), "estilo:semilla".
+// Solo estilos con licencia libre; la lista blanca evita cargar URLs arbitrarias.
 const AVATAR_STYLES = [
-  { key: 'lorelei', label: 'Retratos' },
-  { key: 'notionists', label: 'Ilustrados' },
-  { key: 'open-peeps', label: 'Dibujos' },
-  { key: 'avataaars', label: 'Cartoon' },
   { key: 'bottts', label: 'Robots' },
+  { key: 'fun-emoji', label: 'Caritas' },
   { key: 'thumbs', label: 'Formas' },
 ]
 function parseAvatar(v) {
   if (!v || typeof v !== 'string') return null
   const i = v.indexOf(':')
   if (i < 1) return null
-  const style = v.slice(0, i)
-  const seed = v.slice(i + 1)
-  if (!seed || !AVATAR_STYLES.some((s) => s.key === style)) return null
-  return { style, seed }
+  const kind = v.slice(0, i)
+  const rest = v.slice(i + 1)
+  if (!rest) return null
+  if (kind === 'fluent') return FLUENT_ANIMALS.includes(rest) ? { kind: 'fluent', name: rest } : null
+  if (AVATAR_STYLES.some((s) => s.key === kind)) return { kind: 'dicebear', style: kind, seed: rest }
+  return null
 }
 function avatarUrl(v, colorKey) {
   const a = parseAvatar(v)
   if (!a) return null
+  if (a.kind === 'fluent') return fluentUrl(a.name)
   const bg = colorOf(colorKey).soft.slice(1)
   return `https://api.dicebear.com/9.x/${a.style}/svg?seed=${encodeURIComponent(a.seed)}&backgroundColor=${bg}`
 }
@@ -165,59 +187,134 @@ function Avatar({ profile, size = 36, ring }) {
   const c = colorOf(profile?.avatar_color)
   const initial = (profile?.full_name || '?').trim().charAt(0).toUpperCase()
   const url = avatarUrl(profile?.avatar, profile?.avatar_color)
+  const pad = parseAvatar(profile?.avatar)?.kind === 'fluent' ? size * 0.12 : 0
   useEffect(() => { setFailed(false) }, [url])
   const showImg = !!url && !failed
   return (
     <span style={{
-      width: size, height: size, borderRadius: '50%', background: showImg ? colorOf(profile?.avatar_color).soft : c.main, color: '#fff',
+      width: size, height: size, borderRadius: '50%', background: showImg ? c.soft : c.main, color: '#fff',
       display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, overflow: 'hidden',
       fontSize: size * 0.45, fontWeight: 800, boxShadow: ring ? '0 0 0 2px #fff' : 'none',
     }}>
       {showImg ? (
         <img src={url} alt="" width={size} height={size} loading="lazy" onError={() => setFailed(true)}
-          style={{ width: '100%', height: '100%', display: 'block' }} />
+          style={{ width: '100%', height: '100%', display: 'block', padding: pad, boxSizing: 'border-box', objectFit: 'contain' }} />
       ) : initial}
     </span>
   )
 }
 
-// Galería para elegir avatar: estilo + 8 opciones, con "Más opciones" para ver otras
+// Botones de pestañas (temas de listas, tipos de avatar)
+function TabChips({ tabs, value, onChange, accent }) {
+  return (
+    <div style={{ ...S.row, marginBottom: 10 }}>
+      {tabs.map((t) => {
+        const on = value === t.key
+        return (
+          <button key={t.key} type="button" onClick={() => onChange(t.key)} style={{
+            padding: '6px 12px', borderRadius: 999, cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, fontWeight: 700,
+            border: `1.5px solid ${on ? accent.main : T.border}`, background: on ? accent.soft : '#fff', color: on ? accent.dark : T.muted,
+          }}>{t.label}</button>
+        )
+      })}
+    </div>
+  )
+}
+
+// Opción de una galería de imágenes: si la imagen no carga, la opción desaparece
+function ArtButton({ src, on, accent, round, bg, onPick }) {
+  const [failed, setFailed] = useState(false)
+  if (failed) return null
+  return (
+    <button type="button" onClick={onPick} style={{
+      padding: 6, cursor: 'pointer', background: bg || '#fff', borderRadius: round ? '50%' : 14, lineHeight: 0,
+      border: `3px solid ${on ? accent.main : T.border}`,
+    }}>
+      <img src={src} alt="" loading="lazy" onError={() => setFailed(true)}
+        style={{ width: '100%', aspectRatio: '1 / 1', objectFit: 'contain', display: 'block' }} />
+    </button>
+  )
+}
+
+// Imagen de una lista: ilustración 3D si es "fluent:…", o icono de línea
+function ListIcon({ name, size = 20 }) {
+  const [failed, setFailed] = useState(false)
+  useEffect(() => { setFailed(false) }, [name])
+  if (isArt(name) && !failed) {
+    return (
+      <img src={fluentUrl(name.slice(7))} alt="" width={size} height={size} loading="lazy" onError={() => setFailed(true)}
+        style={{ width: size, height: size, objectFit: 'contain', display: 'block', flexShrink: 0 }} />
+    )
+  }
+  return <Icon name={name} size={size} />
+}
+
+// Galería para elegir avatar: animales (3D), robots, caritas y formas
 function AvatarPicker({ value, color, onChange }) {
   const current = parseAvatar(value)
-  const [style, setStyle] = useState(current?.style || AVATAR_STYLES[0].key)
+  const [tab, setTab] = useState(current?.kind === 'dicebear' ? current.style : 'animals')
   const [batch, setBatch] = useState(1)
   const accent = colorOf(color)
+  const tabs = [{ key: 'animals', label: 'Animales' }, ...AVATAR_STYLES]
   const seeds = Array.from({ length: 8 }, (_, i) => `b${batch}-${i + 1}`)
   return (
     <div>
-      <div style={{ ...S.row, marginBottom: 10 }}>
-        {AVATAR_STYLES.map((s) => {
-          const on = style === s.key
-          return (
-            <button key={s.key} type="button" onClick={() => setStyle(s.key)} style={{
-              padding: '6px 12px', borderRadius: 999, cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, fontWeight: 700,
-              border: `1.5px solid ${on ? accent.main : T.border}`, background: on ? accent.soft : '#fff', color: on ? accent.dark : T.muted,
-            }}>{s.label}</button>
-          )
-        })}
-      </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
-        {seeds.map((seed) => {
-          const v = `${style}:${seed}`
-          const on = value === v
-          return (
-            <button key={seed} type="button" onClick={() => onChange(v)} style={{
-              padding: 0, borderRadius: '50%', cursor: 'pointer', background: 'none', lineHeight: 0,
-              border: `3px solid ${on ? accent.main : 'transparent'}`,
-            }}>
-              <img src={avatarUrl(v, color)} alt="" loading="lazy" style={{ width: '100%', borderRadius: '50%', display: 'block' }} />
-            </button>
-          )
-        })}
-      </div>
-      <button type="button" style={{ ...S.btnGhost, marginTop: 10 }} onClick={() => setBatch(batch + 1)}>
-        <Icon name="dice" size={15} /> Más opciones
-      </button>
+      <TabChips tabs={tabs} value={tab} onChange={setTab} accent={accent} />
+      {tab === 'animals' ? (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
+          {FLUENT_ANIMALS.map((name) => (
+            <ArtButton key={name} src={fluentUrl(name)} on={value === `fluent:${name}`} accent={accent} round bg={accent.soft}
+              onPick={() => onChange(`fluent:${name}`)} />
+          ))}
+        </div>
+      ) : (
+        <>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
+            {seeds.map((seed) => {
+              const v = `${tab}:${seed}`
+              const on = value === v
+              return (
+                <button key={seed} type="button" onClick={() => onChange(v)} style={{
+                  padding: 0, borderRadius: '50%', cursor: 'pointer', background: 'none', lineHeight: 0,
+                  border: `3px solid ${on ? accent.main : 'transparent'}`,
+                }}>
+                  <img src={avatarUrl(v, color)} alt="" loading="lazy" style={{ width: '100%', borderRadius: '50%', display: 'block' }} />
+                </button>
+              )
+            })}
+          </div>
+          <button type="button" style={{ ...S.btnGhost, marginTop: 10 }} onClick={() => setBatch(batch + 1)}>
+            <Icon name="dice" size={15} /> Más opciones
+          </button>
+        </>
+      )}
+    </div>
+  )
+}
+
+// Galería de imágenes para una lista, por temas (o iconos sencillos de línea)
+function ListArtPicker({ value, accent, onChange }) {
+  const [tab, setTab] = useState(() => {
+    if (isArt(value)) {
+      const i = LIST_THEMES.findIndex((t) => t.items.includes(value.slice(7)))
+      return i >= 0 ? i : 0
+    }
+    return value && ICONS[value] ? 'icons' : 0
+  })
+  const tabs = [...LIST_THEMES.map((t, i) => ({ key: i, label: t.label })), { key: 'icons', label: 'Sencillos' }]
+  return (
+    <div>
+      <TabChips tabs={tabs} value={tab} onChange={setTab} accent={accent} />
+      {tab === 'icons' ? (
+        <IconPicker options={LIST_ICON_KEYS} value={value} accent={accent} onChange={onChange} />
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8 }}>
+          {LIST_THEMES[tab].items.map((name) => (
+            <ArtButton key={name} src={fluentUrl(name)} on={value === `fluent:${name}`} accent={accent} bg={accent.soft}
+              onPick={() => onChange(`fluent:${name}`)} />
+          ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -239,7 +336,7 @@ function AvatarStack({ profiles, size = 24, max = 4 }) {
 function IconBadge({ icon, color, size = 48 }) {
   return (
     <span style={{ width: size, height: size, borderRadius: size * 0.3, background: color.soft, color: color.dark, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-      <Icon name={icon} size={size * 0.5} />
+      <ListIcon name={icon} size={isArt(icon) ? size * 0.72 : size * 0.5} />
     </span>
   )
 }
@@ -321,7 +418,7 @@ function ListPicker({ lists, selected, onChange, label }) {
               border: `1.5px solid ${on ? c.main : T.border}`, background: on ? c.soft : '#fff', color: on ? c.dark : T.text, fontSize: 14, fontWeight: 600,
             }}>
               <input type="checkbox" checked={on} onChange={() => toggle(l.id)} style={{ margin: 0 }} />
-              <Icon name={l.icon} size={14} /> {l.name}
+              <ListIcon name={l.icon} size={16} /> {l.name}
             </label>
           )
         })}
@@ -364,8 +461,8 @@ function ListFields({ value, onChange, more = true, namePlaceholder = 'Nombre de
           <textarea style={{ ...S.input, minHeight: 64, resize: 'vertical' }}
             placeholder="Descripción o leyenda (opcional). Ej: VJ = videojuego, H = herramienta"
             value={value.description} onChange={(e) => onChange({ ...value, description: e.target.value })} />
-          <div style={{ ...S.small, fontWeight: 700, marginBottom: 6 }}>Icono</div>
-          <IconPicker options={LIST_ICON_KEYS} value={value.icon} accent={c} onChange={(icon) => onChange({ ...value, icon })} />
+          <div style={{ ...S.small, fontWeight: 700, marginBottom: 6 }}>Imagen</div>
+          <ListArtPicker value={value.icon} accent={c} onChange={(icon) => onChange({ ...value, icon })} />
           <div style={{ ...S.small, fontWeight: 700, margin: '12px 0 6px' }}>Color</div>
           <ColorPicker value={value.color} onChange={(color) => onChange({ ...value, color })} />
         </>
@@ -1070,7 +1167,7 @@ export default function Home() {
           </div>
         </form>
         <p style={{ ...S.small, textAlign: 'center', marginTop: 12 }}>
-          Avatares generados con DiceBear: Lorelei (Lisa Wischofsky), Notionists (Zoish), Open Peeps, Avataaars y Bottts (Pablo Stanley) y Thumbs (DiceBear).
+          Créditos: animales y objetos 3D de Fluent Emoji (© Microsoft, licencia MIT). Robots, caritas y formas generados con DiceBear: Bottts (Pablo Stanley), Fun Emoji (Davis Uche, CC BY 4.0) y Thumbs (DiceBear, CC0).
         </p>
       </>
     )
@@ -1207,7 +1304,7 @@ export default function Home() {
                           const lc = colorOf(l?.color)
                           return (
                             <span key={x.list_id} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, fontWeight: 700, padding: '3px 10px', borderRadius: 999, background: lc.soft, color: lc.dark, marginRight: 6, marginTop: 4 }}>
-                              <Icon name={l?.icon} size={12} /> {listName(x.list_id)}
+                              <ListIcon name={l?.icon} size={14} /> {listName(x.list_id)}
                             </span>
                           )
                         })}
@@ -1246,7 +1343,7 @@ export default function Home() {
           <div style={{ marginTop: 12, borderRadius: 20, padding: 18, background: `linear-gradient(135deg, ${accent.main} 0%, ${accent.dark} 100%)`, color: '#fff', boxShadow: `0 8px 22px ${accent.main}55` }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
               <span style={{ width: 58, height: 58, borderRadius: 18, background: 'rgba(255,255,255,0.22)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <Icon name={currentList.icon} size={30} />
+                <ListIcon name={currentList.icon} size={isArt(currentList.icon) ? 44 : 30} />
               </span>
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontSize: 24, fontWeight: 800, lineHeight: 1.15 }}>{currentList.name}</div>
@@ -1308,7 +1405,7 @@ export default function Home() {
           <p style={S.small}>Cargando…</p>
         ) : gifts.length === 0 ? (
           <div style={{ ...S.card, textAlign: 'center', padding: 28 }}>
-            <span style={{ color: accent.main, display: 'inline-flex' }}><Icon name={currentList.icon} size={38} /></span>
+            <span style={{ color: accent.main, display: 'inline-flex' }}><ListIcon name={currentList.icon} size={isArt(currentList.icon) ? 56 : 38} /></span>
             <p style={{ ...S.small, margin: '8px 0 0' }}>{isOwner ? 'Esta lista está vacía. Añade el primer regalo arriba.' : 'Esta lista aún no tiene regalos.'}</p>
           </div>
         ) : (
