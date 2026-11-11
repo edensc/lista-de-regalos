@@ -121,7 +121,32 @@ const ICONS = {
   smile: (<><circle cx="12" cy="12" r="10" /><path d="M8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01" /></>),
 }
 const LIST_ICON_KEYS = ['gift', 'cake', 'tree', 'gamepad', 'book', 'music', 'wrench', 'home', 'film', 'shirt', 'wine', 'dice', 'star', 'heart', 'camera', 'smile']
-const AVATAR_ICON_KEYS = ['smile', 'star', 'heart', 'music', 'gamepad', 'camera', 'book', 'tree', 'gift', 'cake', 'dice', 'film']
+
+// Avatares: DiceBear (API gratuita para uso no comercial). Se guarda "estilo:semilla".
+// Solo estilos con licencia CC0 o de uso libre; la lista blanca evita cargar URLs arbitrarias.
+const AVATAR_STYLES = [
+  { key: 'lorelei', label: 'Retratos' },
+  { key: 'notionists', label: 'Ilustrados' },
+  { key: 'open-peeps', label: 'Dibujos' },
+  { key: 'avataaars', label: 'Cartoon' },
+  { key: 'bottts', label: 'Robots' },
+  { key: 'thumbs', label: 'Formas' },
+]
+function parseAvatar(v) {
+  if (!v || typeof v !== 'string') return null
+  const i = v.indexOf(':')
+  if (i < 1) return null
+  const style = v.slice(0, i)
+  const seed = v.slice(i + 1)
+  if (!seed || !AVATAR_STYLES.some((s) => s.key === style)) return null
+  return { style, seed }
+}
+function avatarUrl(v, colorKey) {
+  const a = parseAvatar(v)
+  if (!a) return null
+  const bg = colorOf(colorKey).soft.slice(1)
+  return `https://api.dicebear.com/9.x/${a.style}/svg?seed=${encodeURIComponent(a.seed)}&backgroundColor=${bg}`
+}
 
 function Icon({ name, size = 20, color = 'currentColor', stroke = 2 }) {
   return (
@@ -136,17 +161,64 @@ function Icon({ name, size = 20, color = 'currentColor', stroke = 2 }) {
 // Componentes reutilizables
 // =====================================================
 function Avatar({ profile, size = 36, ring }) {
+  const [failed, setFailed] = useState(false)
   const c = colorOf(profile?.avatar_color)
   const initial = (profile?.full_name || '?').trim().charAt(0).toUpperCase()
-  const hasIcon = profile?.avatar_icon && ICONS[profile.avatar_icon]
+  const url = avatarUrl(profile?.avatar, profile?.avatar_color)
+  useEffect(() => { setFailed(false) }, [url])
+  const showImg = !!url && !failed
   return (
     <span style={{
-      width: size, height: size, borderRadius: '50%', background: c.main, color: '#fff',
-      display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+      width: size, height: size, borderRadius: '50%', background: showImg ? colorOf(profile?.avatar_color).soft : c.main, color: '#fff',
+      display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, overflow: 'hidden',
       fontSize: size * 0.45, fontWeight: 800, boxShadow: ring ? '0 0 0 2px #fff' : 'none',
     }}>
-      {hasIcon ? <Icon name={profile.avatar_icon} size={size * 0.55} color="#fff" /> : initial}
+      {showImg ? (
+        <img src={url} alt="" width={size} height={size} loading="lazy" onError={() => setFailed(true)}
+          style={{ width: '100%', height: '100%', display: 'block' }} />
+      ) : initial}
     </span>
+  )
+}
+
+// Galería para elegir avatar: estilo + 8 opciones, con "Más opciones" para ver otras
+function AvatarPicker({ value, color, onChange }) {
+  const current = parseAvatar(value)
+  const [style, setStyle] = useState(current?.style || AVATAR_STYLES[0].key)
+  const [batch, setBatch] = useState(1)
+  const accent = colorOf(color)
+  const seeds = Array.from({ length: 8 }, (_, i) => `b${batch}-${i + 1}`)
+  return (
+    <div>
+      <div style={{ ...S.row, marginBottom: 10 }}>
+        {AVATAR_STYLES.map((s) => {
+          const on = style === s.key
+          return (
+            <button key={s.key} type="button" onClick={() => setStyle(s.key)} style={{
+              padding: '6px 12px', borderRadius: 999, cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, fontWeight: 700,
+              border: `1.5px solid ${on ? accent.main : T.border}`, background: on ? accent.soft : '#fff', color: on ? accent.dark : T.muted,
+            }}>{s.label}</button>
+          )
+        })}
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
+        {seeds.map((seed) => {
+          const v = `${style}:${seed}`
+          const on = value === v
+          return (
+            <button key={seed} type="button" onClick={() => onChange(v)} style={{
+              padding: 0, borderRadius: '50%', cursor: 'pointer', background: 'none', lineHeight: 0,
+              border: `3px solid ${on ? accent.main : 'transparent'}`,
+            }}>
+              <img src={avatarUrl(v, color)} alt="" loading="lazy" style={{ width: '100%', borderRadius: '50%', display: 'block' }} />
+            </button>
+          )
+        })}
+      </div>
+      <button type="button" style={{ ...S.btnGhost, marginTop: 10 }} onClick={() => setBatch(batch + 1)}>
+        <Icon name="dice" size={15} /> Más opciones
+      </button>
+    </div>
   )
 }
 
@@ -390,7 +462,7 @@ export default function Home() {
 
   // Perfil
   const [myProfile, setMyProfile] = useState(null)
-  const [profileDraft, setProfileDraft] = useState({ full_name: '', avatar_icon: '', avatar_color: 'violet' })
+  const [profileDraft, setProfileDraft] = useState({ full_name: '', avatar: '', avatar_color: 'violet' })
 
   // Mensajes
   const [error, setError] = useState('')
@@ -471,14 +543,14 @@ export default function Home() {
   const ensureProfile = useCallback(async (u) => {
     if (!u) return
     const { data } = await supabase.from('profiles')
-      .select('id, full_name, avatar_icon, avatar_color').eq('id', u.id).maybeSingle()
+      .select('id, full_name, avatar, avatar_color').eq('id', u.id).maybeSingle()
     if (data) {
       setMyProfile(data)
       setProfilesMap((prev) => ({ ...prev, [data.id]: data }))
     } else {
       const name = u.user_metadata?.full_name || u.email?.split('@')[0] || 'Usuario'
       await supabase.from('profiles').upsert({ id: u.id, full_name: name })
-      const created = { id: u.id, full_name: name, avatar_icon: null, avatar_color: null }
+      const created = { id: u.id, full_name: name, avatar: null, avatar_color: null }
       setMyProfile(created)
       setProfilesMap((prev) => ({ ...prev, [u.id]: created }))
     }
@@ -538,7 +610,7 @@ export default function Home() {
   function openProfile() {
     setProfileDraft({
       full_name: myProfile?.full_name || '',
-      avatar_icon: myProfile?.avatar_icon || '',
+      avatar: myProfile?.avatar || '',
       avatar_color: myProfile?.avatar_color || 'violet',
     })
     setView('profile')
@@ -549,7 +621,7 @@ export default function Home() {
     if (!profileDraft.full_name.trim()) return flash('Escribe tu nombre')
     const payload = {
       full_name: profileDraft.full_name.trim(),
-      avatar_icon: profileDraft.avatar_icon || null,
+      avatar: profileDraft.avatar || null,
       avatar_color: profileDraft.avatar_color || null,
     }
     const { error } = await supabase.from('profiles').update(payload).eq('id', user.id)
@@ -583,7 +655,7 @@ export default function Home() {
     const people = [...new Set(rows.flatMap((l) => [l.owner_id, ...(l.list_members || []).map((m) => m.user_id)]))]
     if (people.length > 0) {
       const { data: profs } = await supabase.from('profiles')
-        .select('id, full_name, avatar_icon, avatar_color').in('id', people)
+        .select('id, full_name, avatar, avatar_color').in('id', people)
       rememberProfiles(profs)
     }
   }, [user])
@@ -608,7 +680,7 @@ export default function Home() {
     const actors = [...new Set(rows.map((r) => r.actor_id).filter(Boolean))]
     if (actors.length > 0) {
       const { data: profs } = await supabase.from('profiles')
-        .select('id, full_name, avatar_icon, avatar_color').in('id', actors)
+        .select('id, full_name, avatar, avatar_color').in('id', actors)
       rememberProfiles(profs)
     }
   }, [user])
@@ -635,7 +707,7 @@ export default function Home() {
       const who = [...new Set(Object.values(map))]
       if (who.length > 0) {
         const { data: profs } = await supabase.from('profiles')
-          .select('id, full_name, avatar_icon, avatar_color').in('id', who)
+          .select('id, full_name, avatar, avatar_color').in('id', who)
         rememberProfiles(profs)
       }
     }
@@ -986,17 +1058,20 @@ export default function Home() {
           <div style={{ ...S.small, fontWeight: 700, marginBottom: 6 }}>Nombre</div>
           <input style={S.input} value={profileDraft.full_name} onChange={(e) => setProfileDraft({ ...profileDraft, full_name: e.target.value })} />
           <div style={{ ...S.small, fontWeight: 700, margin: '8px 0 6px' }}>Avatar</div>
-          <IconPicker options={AVATAR_ICON_KEYS} value={profileDraft.avatar_icon} accent={pc}
-            onChange={(k) => setProfileDraft({ ...profileDraft, avatar_icon: k })} />
-          <div style={{ ...S.small, fontWeight: 700, margin: '14px 0 6px' }}>Color</div>
+          <AvatarPicker value={profileDraft.avatar} color={profileDraft.avatar_color}
+            onChange={(v) => setProfileDraft({ ...profileDraft, avatar: v })} />
+          <div style={{ ...S.small, fontWeight: 700, margin: '14px 0 6px' }}>Color de fondo</div>
           <ColorPicker value={profileDraft.avatar_color} onChange={(c) => setProfileDraft({ ...profileDraft, avatar_color: c })} />
           <div style={{ ...S.row, marginTop: 18 }}>
             <button type="submit" style={S.btn(pc)}>Guardar</button>
-            {profileDraft.avatar_icon && (
-              <button type="button" style={S.btnGhost} onClick={() => setProfileDraft({ ...profileDraft, avatar_icon: '' })}>Usar mi inicial</button>
+            {profileDraft.avatar && (
+              <button type="button" style={S.btnGhost} onClick={() => setProfileDraft({ ...profileDraft, avatar: '' })}>Usar mi inicial</button>
             )}
           </div>
         </form>
+        <p style={{ ...S.small, textAlign: 'center', marginTop: 12 }}>
+          Avatares generados con DiceBear: Lorelei (Lisa Wischofsky), Notionists (Zoish), Open Peeps, Avataaars y Bottts (Pablo Stanley) y Thumbs (DiceBear).
+        </p>
       </>
     )
   }
